@@ -156,8 +156,11 @@ jobs:
       - name: Pick a simulator destination
         id: sim
         run: |
+          # "Any iOS Simulator Device" — обобщённая запись без конкретной ОС, для `-destination
+          # name:` не годится (xcodebuild: "Unable to find a device matching..."). Нужна строка
+          # с реальным `OS:`, т.е. конкретный установленный симулятор.
           DEST_NAME=$(xcodebuild -showdestinations -scheme OpenVision -project OpenVision.xcodeproj 2>/dev/null \
-            | grep "platform:iOS Simulator" | head -n1 \
+            | grep "platform:iOS Simulator" | grep -v "Any iOS Simulator" | grep "OS:" | head -n1 \
             | sed -E 's/.*name:([^,}]+).*/\1/' | sed -E 's/^ +| +$//g')
           if [ -z "$DEST_NAME" ]; then
             echo "::error::Не найден ни один iOS Simulator на раннере"
