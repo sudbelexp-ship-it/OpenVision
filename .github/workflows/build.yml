@@ -1,0 +1,115 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26.x
+        run: |
+          echo "Установленные версии Xcode на раннере:"
+          ls /Applications | grep Xcode
+          XCODE_PATH=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n1)
+          if [ -z "$XCODE_PATH" ]; then
+            echo "::error::Не найден Xcode 26.x на раннере macos-26"
+            exit 1
+          fi
+          echo "Выбран: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH"
+          xcodebuild -version
+
+      - name: Install Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Config.xcconfig from secrets
+        env:
+          META_APP_ID: ${{ secrets.META_APP_ID }}
+          META_CLIENT_TOKEN: ${{ secrets.META_CLIENT_TOKEN }}
+        run: |
+          if [ -n "$META_APP_ID" ]; then echo "::add-mask::$META_APP_ID"; fi
+          if [ -n "$META_CLIENT_TOKEN" ]; then echo "::add-mask::$META_CLIENT_TOKEN"; fi
+
+          # Секретов META_APP_ID / META_CLIENT_TOKEN может ещё не быть (регистрация в Meta
+          # Wearables Developer Center не пройдена) — тогда используем заглушки Developer Mode,
+          # чтобы сборка не падала. Регистрация очков при этом работать не будет — это ожидаемо
+          # до момента, пока секреты не добавлены (см. PLAN.md, раздел 1.5).
+          APP_ID_VALUE="${META_APP_ID:-0}"
+          CLIENT_TOKEN_VALUE="${META_CLIENT_TOKEN:-AR|0|developer-mode-placeholder}"
+
+          cat > Config.xcconfig <<EOF
+          // Сгенерировано CI (.github/workflows/build.yml) — см. PLAN.md, Фаза 2.
+          DEVELOPMENT_TEAM =
+          PRODUCT_BUNDLE_IDENTIFIER = ru.ivan.openvision
+          META_APP_ID = $APP_ID_VALUE
+          CLIENT_TOKEN = $CLIENT_TOKEN_VALUE
+          APP_LINK_URL_SCHEME = openvision
+          EOF
+
+      - name: Generate Config.swift
+        run: cp OpenVision/Config/Config.swift.example OpenVision/Config/Config.swift
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned .app (Release, iphoneos)
+        run: |
+          xcodebuild \
+            -scheme OpenVision \
+            -project OpenVision.xcodeproj \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/DerivedData \
+            -skipMacroValidation -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package unsigned IPA
+        id: package
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/OpenVision.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::Не найден собранный .app по пути $APP_PATH"
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qr OpenVision-unsigned.ipa Payload
+          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenVision-unsigned-${{ steps.package.outputs.short_sha }}
+          path: OpenVision-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: OpenVision-unsigned.ipa
+
+  unit-tests:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Заглушка (юнит-тесты будут добавлены в Фазе 5)
+        run: echo "TODO: Фаза 5 — запустить xcodebuild test на симуляторе iOS (см. PLAN.md)"
