@@ -117,7 +117,9 @@ final class SberService: ObservableObject {
     }
 
     /// Чистая функция масштаба — вынесена отдельно от UIKit-рисования для юнит-теста.
-    static func uploadScale(width: CGFloat, height: CGFloat) -> CGFloat {
+    /// `nonisolated`: не трогает состояние актора, поэтому вызывается синхронно из тестов
+    /// без перехода на MainActor.
+    nonisolated static func uploadScale(width: CGFloat, height: CGFloat) -> CGFloat {
         let longSide = max(width, height)
         guard longSide > 0 else { return 1.0 }
         return min(1.0, Constants.Sber.maxLongSide / longSide)
