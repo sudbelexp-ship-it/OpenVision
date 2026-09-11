@@ -41,6 +41,13 @@ extension AppleFoundationService: AIBackend {
     }
 }
 
+// MARK: - Sber (GigaChat)
+
+extension SberService: AIBackend {
+    var backendType: AIBackendType { .sber }
+    var supportsImageInput: Bool { true }
+}
+
 // MARK: - Gemini Live
 
 extension GeminiLiveService: AIBackend {

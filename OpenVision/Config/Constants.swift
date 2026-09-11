@@ -131,6 +131,30 @@ enum Constants {
         static let captureTimeout: TimeInterval = 10.0
     }
 
+    // MARK: - Sber (GigaChat)
+
+    enum Sber {
+        /// GigaChat OAuth (Authorization Key -> Access Token).
+        static let oauthURL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+        /// GigaChat REST API base (files, chat/completions).
+        static let apiBase = "https://gigachat.devices.sberbank.ru/api/v1"
+        /// Scope for физлиц (Freemium) — см. PLAN.md.
+        static let scope = "GIGACHAT_API_PERS"
+        /// Хост, к которому применяется доверие сертификату НУЦ Минцифры (SberTrustDelegate).
+        static let trustedHostSuffix = ".devices.sberbank.ru"
+
+        /// Кадр перед загрузкой: длинная сторона не больше этого значения (без апскейла),
+        /// короткая — по возможности не меньше `minShortSide` (см. PLAN.md, Фаза 3b).
+        static let maxLongSide: CGFloat = 1600
+        static let minShortSide: CGFloat = 800
+        static let jpegQuality: CGFloat = 0.8
+
+        /// Токен обновляется заранее, а не строго по истечении.
+        static let tokenRefreshMarginMs: Int64 = 60_000
+        /// Максимум повторов при HTTP 429, с растущей паузой (см. `GigaChatClient`).
+        static let maxRateLimitRetries = 2
+    }
+
     // MARK: - UI
 
     enum UI {

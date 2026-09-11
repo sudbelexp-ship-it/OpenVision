@@ -57,6 +57,8 @@ targets:
       - path: OpenVision/Resources
         excludes:
           - "**/*.plist"
+      # Корневой сертификат НУЦ Минцифры — нужен SberTrustDelegate для TLS к *.devices.sberbank.ru.
+      - path: certs/russian_trusted_root_ca.pem
     settings:
       base:
         INFOPLIST_FILE: OpenVision/Resources/Info.plist

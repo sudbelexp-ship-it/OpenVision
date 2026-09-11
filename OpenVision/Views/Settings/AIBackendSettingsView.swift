@@ -49,6 +49,16 @@ struct AIBackendSettingsView: View {
             // Backend Configuration Links
             Section {
                 NavigationLink {
+                    GigaChatSettingsView()
+                } label: {
+                    HStack {
+                        Label("Настройки Сбер (GigaChat)", systemImage: "globe.europe.africa")
+                        Spacer()
+                        configurationBadge(configured: settingsManager.settings.isSberConfigured)
+                    }
+                }
+
+                NavigationLink {
                     OpenClawSettingsView()
                 } label: {
                     HStack {

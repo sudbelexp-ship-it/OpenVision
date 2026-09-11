@@ -223,6 +223,8 @@ final class VoiceAgentViewModel: ObservableObject {
                         // of the "connecting…" lag and hangs. It stays resident until the app
                         // backgrounds or the user switches backend.
                         break
+                    case .sber:
+                        break   // stateless HTTP — nothing to disconnect
                     }
                 }
             }
@@ -307,6 +309,10 @@ final class VoiceAgentViewModel: ObservableObject {
                     try await GemmaLocalService.shared.connect(
                         modelId: settingsManager.settings.localGemmaModelId
                     )
+
+                case .sber:
+                    try await SberService.shared.connect()
+                    // Stateless HTTP — photos are captured on-demand like OpenAI/OpenClaw.
                 }
 
                 agentState = .listening
@@ -403,6 +409,8 @@ final class VoiceAgentViewModel: ObservableObject {
                 // Keep the on-device model loaded — see note in the .idle handler. Reloading it
                 // per conversation was what made "Ok Vision" slow/flaky.
                 break
+            case .sber:
+                break   // stateless HTTP — nothing to disconnect
             }
 
             // Stop glasses streaming (turns off LED)
@@ -458,6 +466,7 @@ final class VoiceAgentViewModel: ObservableObject {
             case .openAI: break   // single request/response — nothing to interrupt
             case .appleFoundation: AppleFoundationService.shared.interrupt()
             case .localGemma: GemmaLocalService.shared.interrupt()
+            case .sber: break   // single request/response — nothing to interrupt
             }
         }
 
@@ -644,6 +653,8 @@ final class VoiceAgentViewModel: ObservableObject {
                     AppleFoundationService.shared.interrupt()
                 case .localGemma:
                     GemmaLocalService.shared.interrupt()
+                case .sber:
+                    break   // single request/response — nothing to interrupt
                 }
             }
         }

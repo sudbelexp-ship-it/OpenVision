@@ -48,6 +48,7 @@ enum AIBackendRegistry {
         case .openAI: return OpenAIService.shared
         case .appleFoundation: return AppleFoundationService.shared
         case .localGemma: return GemmaLocalService.shared
+        case .sber: return SberService.shared
         }
     }
 

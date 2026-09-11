@@ -10,6 +10,7 @@ enum AIBackendType: String, Codable, CaseIterable {
     case openAI = "openai"
     case appleFoundation = "apple_foundation"
     case localGemma = "local_gemma"
+    case sber = "sber"
 
     var displayName: String {
         switch self {
@@ -18,6 +19,7 @@ enum AIBackendType: String, Codable, CaseIterable {
         case .openAI: return "OpenAI"
         case .appleFoundation: return "Apple Intelligence"
         case .localGemma: return "Local (MLX)"
+        case .sber: return "Сбер (GigaChat)"
         }
     }
 
@@ -33,6 +35,8 @@ enum AIBackendType: String, Codable, CaseIterable {
             return "On-device Apple model — private, no download (iOS 26+)"
         case .localGemma:
             return "On-device Gemma 4 — private, offline, no API cost"
+        case .sber:
+            return "GigaChat — облачный текст и vision на русском"
         }
     }
 
@@ -43,6 +47,7 @@ enum AIBackendType: String, Codable, CaseIterable {
         case .openAI: return "sparkles"
         case .appleFoundation: return "apple.logo"
         case .localGemma: return "cpu"
+        case .sber: return "globe.europe.africa"
         }
     }
 }
@@ -64,8 +69,8 @@ enum TTSEngineType: String, Codable, CaseIterable, Identifiable {
 struct AppSettings: Codable, Equatable {
     // MARK: - AI Backend Selection
 
-    /// Which AI backend to use
-    var aiBackend: AIBackendType = .openClaw
+    /// Which AI backend to use. Сбер (GigaChat) — бэкенд по умолчанию для этого форка (см. PLAN.md).
+    var aiBackend: AIBackendType = .sber
 
     // MARK: - OpenClaw Configuration
 
@@ -97,6 +102,25 @@ struct AppSettings: Codable, Equatable {
 
     /// Voice used by the OpenAI Realtime backend.
     var openAIRealtimeVoice: String = "marin"
+
+    // MARK: - Sber (GigaChat) Configuration
+
+    /// Authorization Key из личного кабинета developers.sber.ru (обменивается на access token
+    /// через OAuth2 client-credentials — см. SberAuth). Хранится как обычное поле настроек, как и
+    /// остальные ключи в этом проекте (JSON-файл, без Keychain — см. NOTES.md, раздел 7).
+    var sberAuthKey: String = ""
+
+    /// Модель для запросов с изображением (фото с очков / камеры телефона).
+    var sberVisionModel: String = "GigaChat-2-Max"
+
+    /// Модель для текстовых запросов без изображения.
+    var sberTextModel: String = "GigaChat-2-Pro"
+
+    /// Системный промпт — редактируется в настройках (см. PLAN.md, Фаза 3b).
+    var sberSystemPrompt: String = "Ты голосовой ассистент в умных очках. Отвечай по-русски, коротко: 1–3 предложения, без списков и разметки, так как ответ будет озвучен. Если спрашивают о том, что на изображении — описывай конкретно и по делу."
+
+    /// Сколько последних сообщений диалога отправлять вместе с новым запросом.
+    var sberHistoryLimit: Int = 10
 
     // MARK: - Web Search
 
@@ -201,6 +225,11 @@ struct AppSettings: Codable, Equatable {
         localGemmaModelReady
     }
 
+    /// Whether Sber (GigaChat) is configured (has Authorization Key)
+    var isSberConfigured: Bool {
+        !sberAuthKey.isEmpty
+    }
+
     /// Whether the currently selected backend is configured
     var isCurrentBackendConfigured: Bool {
         switch aiBackend {
@@ -209,6 +238,7 @@ struct AppSettings: Codable, Equatable {
         case .openAI: return isOpenAIConfigured
         case .appleFoundation: return true   // OS-managed; availability checked at connect
         case .localGemma: return isLocalGemmaConfigured
+        case .sber: return isSberConfigured
         }
     }
 
