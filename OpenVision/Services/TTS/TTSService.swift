@@ -46,12 +46,13 @@ final class TTSService: NSObject, ObservableObject {
             return voice
         }
 
-        // Fall back to default English voice
-        return AVSpeechSynthesisVoice(language: "en-US")
+        // Лучший установленный голос ru-RU (Enhanced/Premium предпочтительнее — availableVoices
+        // уже сортирует по убыванию качества), иначе — системный голос ru-RU по умолчанию.
+        return Self.availableVoices(for: "ru").first ?? AVSpeechSynthesisVoice(language: "ru-RU")
     }
 
     /// Get all available voices for a language
-    static func availableVoices(for languageCode: String = "en") -> [AVSpeechSynthesisVoice] {
+    static func availableVoices(for languageCode: String = "ru") -> [AVSpeechSynthesisVoice] {
         return AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix(languageCode) }
             .sorted { v1, v2 in
@@ -130,7 +131,7 @@ final class TTSService: NSObject, ObservableObject {
     private func enqueue(_ text: String) {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = selectedVoice
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        utterance.rate = SettingsManager.shared.settings.ttsRate
         utterance.pitchMultiplier = 1.0
         utterance.volume = 1.0
         pendingUtterances += 1

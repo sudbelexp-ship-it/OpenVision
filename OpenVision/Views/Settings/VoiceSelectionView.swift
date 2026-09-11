@@ -155,7 +155,7 @@ struct VoiceSelectionView: View {
     // MARK: - Actions
 
     private func loadVoices() {
-        voices = TTSService.availableVoices(for: "en")
+        voices = TTSService.availableVoices(for: "ru")
     }
 
     private func selectVoice(identifier: String?) {
@@ -166,13 +166,14 @@ struct VoiceSelectionView: View {
         isTestingVoice = true
         testingVoiceId = identifier
 
-        let utterance = AVSpeechUtterance(string: "Hello! This is how I sound. I'm your AI assistant.")
+        let utterance = AVSpeechUtterance(string: "Здравствуйте! Вот как я звучу. Я ваш голосовой ассистент.")
+        utterance.rate = settingsManager.settings.ttsRate
 
         if let identifier = identifier,
            let voice = AVSpeechSynthesisVoice(identifier: identifier) {
             utterance.voice = voice
         } else {
-            utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+            utterance.voice = AVSpeechSynthesisVoice(language: "ru-RU")
         }
 
         let synthesizer = AVSpeechSynthesizer()

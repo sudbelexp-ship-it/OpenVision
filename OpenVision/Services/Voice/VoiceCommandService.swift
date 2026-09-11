@@ -84,9 +84,15 @@ final class VoiceCommandService: ObservableObject {
 
     // MARK: - Speech Recognition
 
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
+    /// Движок распознавания. Только Apple реально работает сейчас (Yandex — заглушка, недоступна
+    /// в UI) — выбор всё равно читается на случай, если это когда-нибудь изменится.
+    private let sttProvider: STTProvider = {
+        switch SettingsManager.shared.settings.speechProvider {
+        case .apple: return AppleSTTProvider(locale: Locale(identifier: Constants.Voice.speechLocaleIdentifier))
+        case .yandex: return YandexSpeechKitProvider()
+        }
+    }()
+    private var sttSink: STTAudioSink?
 
     /// Identity of the CURRENT recognition task. A canceled SFSpeechRecognitionTask still delivers
     /// dying callbacks (stale partials, an empty final, a "canceled" error). Without this guard
@@ -211,14 +217,11 @@ final class VoiceCommandService: ObservableObject {
             throw VoiceCommandError.audioEngineUnavailable
         }
 
-        // Create recognition request
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-
-        guard let recognitionRequest = recognitionRequest else {
-            throw VoiceCommandError.requestCreationFailed
-        }
-
-        configureRecognitionRequest(recognitionRequest)
+        // Prepare the recognition request (not started yet — see STTProvider.swift for why the
+        // split matters: buffers must be appendable before the audio engine starts, but the task
+        // itself starts only after, preserving the original ordering).
+        let sink = sttProvider.prepareRequest(contextualStrings: contextualPhrases())
+        self.sttSink = sink
 
         // Get input node
         let inputNode = audioEngine.inputNode
@@ -231,7 +234,7 @@ final class VoiceCommandService: ObservableObject {
         // so bail gracefully instead of crashing.
         guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
             print("[VoiceCommand] Input unavailable (format \(recordingFormat.sampleRate)Hz/\(recordingFormat.channelCount)ch) — mic likely in use by a call. Skipping listen.")
-            self.recognitionRequest = nil
+            self.sttSink = nil
             self.audioEngine = nil
             throw VoiceCommandError.audioEngineUnavailable
         }
@@ -245,12 +248,12 @@ final class VoiceCommandService: ObservableObject {
         let detector = speechDetector
         if let reason = OVCatchException({
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-                recognitionRequest.append(buffer)
+                sink.append(buffer)
                 detector.feed(buffer)
             }
         }) {
             print("[VoiceCommand] installTap failed: \(reason)")
-            self.recognitionRequest = nil
+            self.sttSink = nil
             self.audioEngine = nil
             throw VoiceCommandError.audioEngineUnavailable
         }
@@ -263,7 +266,7 @@ final class VoiceCommandService: ObservableObject {
             print("[VoiceCommand] Failed to start audio engine: \(error)")
             // Clean up
             audioEngine.inputNode.removeTap(onBus: 0)
-            self.recognitionRequest = nil
+            self.sttSink = nil
             self.audioEngine = nil
             throw VoiceCommandError.audioEngineUnavailable
         }
@@ -271,11 +274,11 @@ final class VoiceCommandService: ObservableObject {
         // Start recognition task after audio engine is running
         recognitionGeneration += 1
         let generation = recognitionGeneration
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+        sttProvider.startTask(for: sink) { [weak self] text, isFinal, error in
             Task { @MainActor in
                 guard let self, generation == self.recognitionGeneration else { return }  // zombie task
-                self.handleRecognitionResult(result: result, error: error)
-                self.restartIfRecognizerEnded(result: result, error: error)
+                self.handleRecognitionResult(text: text, isFinal: isFinal, error: error)
+                self.restartIfRecognizerEnded(isFinal: isFinal, error: error)
             }
         }
 
@@ -284,23 +287,20 @@ final class VoiceCommandService: ObservableObject {
         print("[VoiceCommand] Started listening - audio engine running")
     }
 
-    /// Prime the recognizer for the wake phrase and short-phrase detection. `contextualStrings`
-    /// biases recognition toward "Ok Vision", which is the single biggest factor in reliably
-    /// hearing the wake word over the low-quality glasses Bluetooth-HFP mic (8 kHz). `.search`
-    /// (short phrase) beats `.dictation` (long-form) for a quick wake word + command.
-    private func configureRecognitionRequest(_ request: SFSpeechAudioBufferRecognitionRequest) {
-        request.shouldReportPartialResults = true
-        request.taskHint = .search
-        var phrases = ["Ok Vision", "Okay Vision", "Hey Vision", "Vision"]
+    /// Human-readable phrases for ASR contextual biasing — the user's configured wake word first,
+    /// then the default's known-good variants. Biggest factor in reliably hearing the wake word
+    /// over the low-quality glasses Bluetooth-HFP mic (8 kHz).
+    private func contextualPhrases() -> [String] {
+        var phrases = Constants.Voice.wakeWordContextualPhrases
         if !wakeWord.isEmpty { phrases.insert(wakeWord, at: 0) }
-        request.contextualStrings = phrases
+        return phrases
     }
 
     /// SFSpeechRecognizer stops after ~1 minute or when it emits a final result / errors. While
     /// idling for the wake word that would silently kill listening ("responds once in a while"),
     /// so restart a fresh recognizer whenever the task ends and we're still meant to be listening.
-    private func restartIfRecognizerEnded(result: SFSpeechRecognitionResult?, error: Error?) {
-        let ended = (error != nil) || (result?.isFinal ?? false)
+    private func restartIfRecognizerEnded(isFinal: Bool, error: Error?) {
+        let ended = (error != nil) || isFinal
         // Idle (wake-word) AND conversation mode both rely on an always-running recognizer with no
         // other flow to revive it. Restricting this to `.idle` caused a deaf-mic race: an empty
         // final result arriving while still in conversationMode skipped the restart here, then the
@@ -337,11 +337,8 @@ final class VoiceCommandService: ObservableObject {
     /// Stop listening
     func stopListening() {
         recognitionGeneration += 1   // orphan any in-flight callbacks from the dying task
-        recognitionTask?.cancel()
-        recognitionTask = nil
-
-        recognitionRequest?.endAudio()
-        recognitionRequest = nil
+        sttSink?.cancel()
+        sttSink = nil
 
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
@@ -388,19 +385,15 @@ final class VoiceCommandService: ObservableObject {
         // Stop current recognition. Bump the generation FIRST so the canceled task's dying
         // callbacks (delivered async) are orphaned immediately, not just once the new task exists.
         recognitionGeneration += 1
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        recognitionRequest?.endAudio()
-        recognitionRequest = nil
+        sttSink?.cancel()
+        sttSink = nil
 
         // Remove tap and stop engine briefly
         audioEngine?.inputNode.removeTap(onBus: 0)
 
         // Create new recognition request
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest = recognitionRequest else { return }
-
-        configureRecognitionRequest(recognitionRequest)
+        let sink = sttProvider.prepareRequest(contextualStrings: contextualPhrases())
+        self.sttSink = sink
 
         // Reinstall tap
         guard let audioEngine = audioEngine else { return }
@@ -427,7 +420,7 @@ final class VoiceCommandService: ObservableObject {
         // 0 Hz / 0 channel format throws.
         guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
             print("[VoiceCommand] Input unavailable on reinstall — skipping tap")
-            self.recognitionRequest = nil
+            self.sttSink = nil
             return
         }
 
@@ -437,23 +430,23 @@ final class VoiceCommandService: ObservableObject {
         let detector = speechDetector
         if let reason = OVCatchException({
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-                recognitionRequest.append(buffer)
+                sink.append(buffer)
                 detector.feed(buffer)
             }
         }) {
             print("[VoiceCommand] installTap (reinstall) failed: \(reason)")
-            self.recognitionRequest = nil
+            self.sttSink = nil
             return
         }
 
         // Start new recognition task
         recognitionGeneration += 1
         let generation = recognitionGeneration
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+        sttProvider.startTask(for: sink) { [weak self] text, isFinal, error in
             Task { @MainActor in
                 guard let self, generation == self.recognitionGeneration else { return }  // zombie task
-                self.handleRecognitionResult(result: result, error: error)
-                self.restartIfRecognizerEnded(result: result, error: error)
+                self.handleRecognitionResult(text: text, isFinal: isFinal, error: error)
+                self.restartIfRecognizerEnded(isFinal: isFinal, error: error)
             }
         }
 
@@ -507,14 +500,14 @@ final class VoiceCommandService: ObservableObject {
     // MARK: - Recognition Handling
 
     /// Handle recognition result
-    private func handleRecognitionResult(result: SFSpeechRecognitionResult?, error: Error?) {
+    private func handleRecognitionResult(text: String?, isFinal: Bool, error: Error?) {
         // Guard: must be actively listening
         guard isListening else {
             print("[VoiceCommand] Ignoring result - not listening")
             return
         }
 
-        guard let result = result else {
+        guard let transcription = text else {
             if let error = error {
                 let errorMsg = error.localizedDescription
                 // Ignore common non-critical errors
@@ -525,7 +518,6 @@ final class VoiceCommandService: ObservableObject {
             return
         }
 
-        let transcription = result.bestTranscription.formattedString
         print("[VoiceCommand] 🎤 heard(\(state)): \"\(transcription)\"")
 
         switch state {
@@ -539,7 +531,7 @@ final class VoiceCommandService: ObservableObject {
         case .listening, .conversationMode:
             // Strip wake word from transcription (like xmeta does)
             var command = transcription
-            for ww in [wakeWord.lowercased(), "ok vision", "okay vision", "hey vision", "hi vision"] {
+            for ww in [wakeWord.lowercased()] + Constants.Voice.wakeWordVariations {
                 if let range = command.lowercased().range(of: ww) {
                     command = String(command[range.upperBound...]).trimmingCharacters(in: .whitespaces)
                     break
@@ -558,17 +550,17 @@ final class VoiceCommandService: ObservableObject {
             resetSilenceTimer()
 
             // Check for command completion
-            if result.isFinal && !command.isEmpty {
+            if isFinal && !command.isEmpty {
                 handleCommandComplete(command)
             }
 
         case .processing:
-            // Check for wake word to interrupt TTS (e.g., "ok vision stop")
+            // Check for wake word to interrupt TTS (e.g., "Окей, очки, стоп")
             let allowInterrupt = shouldAllowInterrupt?() ?? false
 
-            // "Ok Vision stop" / "stop" during TTS → FULL STOP. Handle this before the general
+            // "Окей, очки, стоп" during TTS → FULL STOP. Handle this before the general
             // barge-in: halt everything and go quiet. Critically, reset recognition to clear the
-            // buffer — the transcript still starts with "ok vision", so without a reset it would
+            // buffer — the transcript still starts with the wake word, so without a reset it would
             // re-match this branch on every partial result and churn listening/processing forever.
             if allowInterrupt && isStopPhrase(transcription) {
                 print("[VoiceCommand] Stop phrase during TTS — halting")
@@ -577,7 +569,7 @@ final class VoiceCommandService: ObservableObject {
                 hasSpokenThisTurn = false
                 silenceTimer?.invalidate(); silenceTimer = nil
                 state = isWakeWordEnabled ? .idle : .listening
-                restartRecognition()   // clear the stale "ok vision ... stop" buffer
+                restartRecognition()   // clear the stale "...stop" buffer
                 return
             }
 
@@ -590,12 +582,11 @@ final class VoiceCommandService: ObservableObject {
             // the precise boundary between the two regimes.
             if allowInterrupt && detectWakeWord(in: transcription, bypassCooldown: true)
                 && (wakeWordAtStart(transcription) || !isBargeInPaused) {
-                // A BARE "Ok Vision" with nothing after it, mid-reply, is almost always the mic
+                // A BARE wake word with nothing after it, mid-reply, is almost always the mic
                 // hallucinating the wake word from the reply audio the speaker is playing (echo) —
-                // NOT a deliberate interrupt. Real interrupts carry a follow-up ("Ok Vision, what
-                // about Mars?"). Require that command; otherwise ignore and let the reply finish.
-                // (To simply silence a reply, "Ok Vision stop" is handled by the stop-phrase branch
-                // above.)
+                // NOT a deliberate interrupt. Real interrupts carry a follow-up. Require that
+                // command; otherwise ignore and let the reply finish. (To simply silence a reply,
+                // the stop phrase is handled by the stop-phrase branch above.)
                 let command = extractCommandAfterWakeWord(transcription)
                 guard !command.isEmpty else { return }
 
@@ -613,7 +604,7 @@ final class VoiceCommandService: ObservableObject {
                 resetSilenceTimer()
 
                 // If result is already final, process it
-                if result.isFinal {
+                if isFinal {
                     print("[VoiceCommand] Result is final, processing command immediately")
                     handleCommandComplete(command)
                 }
@@ -635,9 +626,8 @@ final class VoiceCommandService: ObservableObject {
     private func isStopPhrase(_ text: String) -> Bool {
         guard detectWakeWord(in: text, bypassCooldown: true) else { return false }
         let lower = text.lowercased()
-        if lower.contains("video") || lower.contains("stream") { return false }
-        let stopWords = ["stop", "be quiet", "shut up", "silence", "quiet", "enough", "cancel"]
-        return stopWords.contains { lower.contains($0) }
+        if lower.contains("видео") || lower.contains("стрим") || lower.contains("трансляц") { return false }
+        return Constants.Voice.stopWords.contains { lower.contains($0) }
     }
 
     /// True when a wake-word variation sits at (or very near) the START of the transcript — i.e. a
@@ -646,12 +636,7 @@ final class VoiceCommandService: ObservableObject {
     /// word up front rejects those phantoms while still catching a real interrupt.
     private func wakeWordAtStart(_ text: String) -> Bool {
         let lower = text.lowercased()
-        let variations = [
-            wakeWord.lowercased(),
-            "ok vision", "okay vision", "o.k. vision", "o k vision",
-            "hey vision", "hi vision",
-            "a vision", "heavy vision", "have vision", "obey vision", "oak vision"
-        ]
+        let variations = [wakeWord.lowercased()] + Constants.Voice.wakeWordVariations
         for v in variations {
             if let r = lower.range(of: v) {
                 // Characters of speech before the wake word. A little leeway ("uh, ok vision")
@@ -670,23 +655,7 @@ final class VoiceCommandService: ObservableObject {
         let wakeWordLower = wakeWord.lowercased()
 
         // Check for exact match or common variations/misrecognitions
-        let variations = [
-            wakeWordLower,
-            // OK Vision variants (most reliable)
-            "ok vision",
-            "okay vision",
-            "o.k. vision",
-            "o k vision",
-            // Ok Vision variants
-            "hey vision",
-            "hi vision",
-            // Common misrecognitions
-            "a vision",
-            "heavy vision",
-            "have vision",
-            "obey vision",
-            "oak vision"
-        ]
+        let variations = [wakeWordLower] + Constants.Voice.wakeWordVariations
 
         let detected = variations.contains { lowercased.contains($0) }
         if detected {
@@ -700,12 +669,7 @@ final class VoiceCommandService: ObservableObject {
         let lowercased = text.lowercased()
         let wakeWordLower = wakeWord.lowercased()
 
-        let variations = [
-            wakeWordLower,
-            "ok vision", "okay vision", "o.k. vision", "o k vision",
-            "hey vision", "hi vision",
-            "a vision", "heavy vision", "have vision", "obey vision", "oak vision"
-        ]
+        let variations = [wakeWordLower] + Constants.Voice.wakeWordVariations
 
         for variation in variations {
             if let range = lowercased.range(of: variation) {
@@ -749,7 +713,7 @@ final class VoiceCommandService: ObservableObject {
         var command = text
         let wakeWordLower = wakeWord.lowercased()
 
-        for prefix in [wakeWordLower, "hey vision", "ok vision", "okay vision"] {
+        for prefix in [wakeWordLower] + Constants.Voice.wakeWordVariations {
             if command.lowercased().hasPrefix(prefix) {
                 command = String(command.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
                 break

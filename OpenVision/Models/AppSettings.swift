@@ -52,6 +52,20 @@ enum AIBackendType: String, Codable, CaseIterable {
     }
 }
 
+/// Движок распознавания и синтеза речи. Yandex — задел на будущее (PLAN.md, раздел 7 "Потом"),
+/// пока не реализован и недоступен для выбора в UI (см. VoiceSettingsView).
+enum SpeechProviderType: String, Codable, CaseIterable {
+    case apple = "apple"
+    case yandex = "yandex"
+
+    var displayName: String {
+        switch self {
+        case .apple: return "Apple"
+        case .yandex: return "Yandex SpeechKit"
+        }
+    }
+}
+
 /// Which text-to-speech engine to use.
 enum TTSEngineType: String, Codable, CaseIterable, Identifiable {
     case appleSystem = "apple"
@@ -140,8 +154,16 @@ struct AppSettings: Codable, Equatable {
 
     // MARK: - Voice Settings
 
-    /// Wake word phrase (default: "Ok Vision")
-    var wakeWord: String = "Ok Vision"
+    /// Движок распознавания/синтеза речи. Apple работает полностью; Yandex — заглушка (см.
+    /// SpeechProviderType), недоступна для выбора в UI, пока не реализована.
+    var speechProvider: SpeechProviderType = .apple
+
+    /// Скорость озвучки Apple TTS (AVSpeechUtterance.rate: 0...1, по умолчанию 0.5 —
+    /// AVSpeechUtteranceDefaultSpeechRate). Настраивается в Settings → Voice Control.
+    var ttsRate: Float = 0.5
+
+    /// Wake word phrase (default: "Окей, очки" — см. PLAN.md, раздел 0)
+    var wakeWord: String = Constants.Voice.defaultWakeWord
 
     /// Whether wake word detection is enabled (OpenClaw mode only)
     var wakeWordEnabled: Bool = true

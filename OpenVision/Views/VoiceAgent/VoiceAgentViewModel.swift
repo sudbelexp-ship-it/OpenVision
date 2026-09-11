@@ -886,9 +886,13 @@ final class VoiceAgentViewModel: ObservableObject {
         if !isLiveVideoMode, settingsManager.settings.aiBackend == .localGemma {
             let visionPhrases = ["what do you see", "what am i looking at", "what are you looking at",
                                  "what's in front of me", "what is in front of me",
-                                 "describe what you see", "describe the view", "describe the scene"]
+                                 "describe what you see", "describe the view", "describe the scene",
+                                 // Русские эквиваленты (см. PLAN.md, Фаза 4).
+                                 "что я вижу", "что ты видишь", "что передо мной",
+                                 "опиши что видишь", "опиши вид"]
             if visionPhrases.contains(where: { lowerCommand.contains($0) }),
-               !lowerCommand.contains("photo") && !lowerCommand.contains("picture") {
+               !lowerCommand.contains("photo") && !lowerCommand.contains("picture")
+               && !lowerCommand.contains("фото") && !lowerCommand.contains("снимок") {
                 NSLog("[OV] vision question outside live mode — guiding instead of imageless model call")
                 speakResponse("I can't see anything right now. Say 'take a photo' for a quick look, or 'start live video' and I'll watch continuously.")
                 return
@@ -949,7 +953,13 @@ final class VoiceAgentViewModel: ObservableObject {
                             "capture a photo", "capture photo", "snap a photo", "snap a picture",
                             "what do you see", "what are you looking at", "look at this",
                             "what's in front of me", "describe what you see", "what is this",
-                            "what am i looking at", "can you see"]
+                            "what am i looking at", "can you see",
+                            // Русские команды по умолчанию (см. PLAN.md, Фаза 4): «что это»,
+                            // «что я вижу», «прочитай» + естественные варианты.
+                            "что это", "что я вижу", "что ты видишь", "прочитай", "прочти",
+                            "сфотографируй", "сделай фото", "сними фото", "сделай снимок",
+                            "посмотри", "что здесь", "что тут", "что видно", "опиши это",
+                            "что передо мной"]
 
         let isPhotoCommand = photoKeywords.contains { lowerCommand.contains($0) }
 
@@ -1627,15 +1637,28 @@ final class VoiceAgentViewModel: ObservableObject {
         let triggers = [
             "take a picture of this", "take a photo of this", "take a picture", "take a photo",
             "take photo", "take picture", "capture a photo", "capture photo", "snap a photo",
-            "snap a picture", "go ahead and take"
+            "snap a picture", "go ahead and take",
+            // Русские триггеры фото-команды — те же слова, что в photoKeywords выше.
+            "сфотографируй это", "сфотографируй", "сделай фото", "сними фото", "сделай снимок"
         ]
         for t in triggers { s = s.replacingOccurrences(of: t, with: " ") }
         s = s.replacingOccurrences(of: "  ", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         // Trim leftover connective prefixes left after removing the trigger ("...and tell me…").
-        for prefix in ["and ", "of this ", "of ", "please "] {
+        for prefix in ["and ", "of this ", "of ", "please ", "и ", "пожалуйста "] {
             while s.hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)) }
         }
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: " ,.?!"))
+
+        // Сбер (GigaChat) — русский бэкенд по умолчанию (PLAN.md): просим по-русски, без
+        // английской обёртки, которая не нужна остальным облачным бэкендам (их системные
+        // промпты — на английском).
+        if settingsManager.settings.aiBackend == .sber {
+            if s.count < 3 {
+                return "Что изображено на этой картинке? Опиши конкретно и по делу, 2–3 предложения."
+            }
+            return "Внимательно посмотри на изображение и ответь конкретно: \(s)"
+        }
+
         if s.count < 3 {
             return "What is the main object in this image? Name it specifically and describe its key visible details in 2–3 sentences."
         }

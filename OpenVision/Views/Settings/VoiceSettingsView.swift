@@ -39,7 +39,7 @@ struct VoiceSettingsView: View {
                         Text("Wake Phrase")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        TextField("Ok Vision", text: $settingsManager.settings.wakeWord)
+                        TextField(Constants.Voice.defaultWakeWord, text: $settingsManager.settings.wakeWord)
                             .autocorrectionDisabled()
                     }
                 }
@@ -67,6 +67,16 @@ struct VoiceSettingsView: View {
                 Text("Microphone")
             } footer: {
                 Text("When on, voice input uses the glasses' Bluetooth microphone for true hands-free use, and falls back to the phone mic automatically when the glasses aren't the audio device. Uses more battery. Turn off to always use the phone mic.")
+            }
+
+            // Speech Recognition/Synthesis Engine (STT + TTS)
+            Section {
+                speechProviderRow(.apple, isEnabled: true)
+                speechProviderRow(.yandex, isEnabled: false)
+            } header: {
+                Text("Speech Recognition & Synthesis Engine")
+            } footer: {
+                Text("Apple работает полностью офлайн, если поддерживает локаль. Yandex SpeechKit — скоро.")
             }
 
             // Conversation Section
@@ -101,6 +111,16 @@ struct VoiceSettingsView: View {
                             Spacer()
                             Text(selectedVoiceName).foregroundColor(.secondary)
                         }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Speech Rate")
+                            Spacer()
+                            Text(String(format: "%.2f", settingsManager.settings.ttsRate))
+                                .foregroundColor(.secondary)
+                        }
+                        Slider(value: $settingsManager.settings.ttsRate, in: 0.3...0.7)
                     }
                 } else {
                     Picker("Kokoro Voice", selection: $settingsManager.settings.kokoroVoice) {
@@ -165,11 +185,37 @@ struct VoiceSettingsView: View {
             } header: {
                 Text("Examples")
             } footer: {
-                Text("The wake word detection is flexible and will recognize variations like \"OK Vision\" or \"Okay Vision\".")
+                Text("Распознавание фразы активации гибкое и учитывает варианты вроде «Окей очки» (без запятой).")
             }
         }
         .navigationTitle("Voice Control")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Speech Engine Row
+
+    @ViewBuilder
+    private func speechProviderRow(_ provider: SpeechProviderType, isEnabled: Bool) -> some View {
+        Button {
+            guard isEnabled else { return }
+            settingsManager.settings.speechProvider = provider
+        } label: {
+            HStack {
+                Text(provider.displayName)
+                    .foregroundColor(isEnabled ? .primary : .secondary)
+                Spacer()
+                if !isEnabled {
+                    Text("скоро")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else if settingsManager.settings.speechProvider == provider {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(Theme.accent)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
     }
 
     // MARK: - Sample Phrases

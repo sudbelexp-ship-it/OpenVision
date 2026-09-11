@@ -77,8 +77,28 @@ enum Constants {
     // MARK: - Voice
 
     enum Voice {
-        /// Default wake word
-        static let defaultWakeWord = "Ok Vision"
+        /// Default wake word (см. PLAN.md, Фаза 4 — распознавание речи переведено на ru-RU).
+        static let defaultWakeWord = "Окей, очки"
+
+        /// Локаль распознавания и синтеза речи — фиксированное решение (PLAN.md, раздел 0).
+        static let speechLocaleIdentifier = "ru-RU"
+
+        /// Фразы для контекстной подсказки распознавателю (SFSpeechAudioBufferRecognitionRequest
+        /// .contextualStrings) — человекочитаемые варианты фразы активации по умолчанию.
+        static let wakeWordContextualPhrases = ["Окей, очки", "Окей очки", "Очки"]
+
+        /// Варианты распознавания фразы активации по умолчанию ("Окей, очки") для сопоставления
+        /// с транскриптом — подобраны по фонетическому сходству, без проверки на реальном железе
+        /// (см. NOTES.md, риск №5). Ожидаемо потребуют уточнения после теста на очках.
+        static let wakeWordVariations: [String] = [
+            "окей очки", "окей, очки", "окей очке", "окей очков",
+            "ок очки", "ok очки", "хоккей очки", "какие очки", "эй очки"
+        ]
+
+        /// Стоп-слова ("Окей, очки, стоп") — распознаются ТОЛЬКО вместе с фразой активации
+        /// (см. VoiceCommandService.isStopPhrase), поэтому список короткий и не пересекается
+        /// с обычной речью.
+        static let stopWords: [String] = ["стоп", "хватит", "тихо", "замолчи", "отмена", "прекрати"]
 
         /// Wake word cooldown to prevent double-detection (seconds)
         static let wakeWordCooldown: TimeInterval = 0.8
