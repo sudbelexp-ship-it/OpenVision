@@ -112,4 +112,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Заглушка (юнит-тесты будут добавлены в Фазе 5)
-        run: echo "TODO: Фаза 5 — запустить xcodebuild test на симуляторе iOS (см. PLAN.md)"
+        run: 'echo "TODO: Фаза 5 — запустить xcodebuild test на симуляторе iOS (см. PLAN.md)"'
