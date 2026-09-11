@@ -74,6 +74,11 @@ targets:
         products:
           - MWDATCore
           - MWDATCamera
+          # Mock Device Kit — тест без реальных очков (см. PLAN.md, Фаза 5). Продукт подтверждён
+          # в Package.swift на закреплённой версии 0.9.0. Линкуется всегда (XcodeGen не даёт
+          # просто исключить SPM-продукт из Release), но включается только в Debug-сборках
+          # (см. OpenVisionApp.swift, #if DEBUG) — в Release это неиспользуемый мёртвый код.
+          - MWDATMockDevice
       # Acoustic voice-activity detection for end-of-turn (see SpeechActivityDetector).
       - package: FluidAudio
         products:

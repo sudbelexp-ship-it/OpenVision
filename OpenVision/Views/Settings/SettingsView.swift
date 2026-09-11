@@ -83,6 +83,23 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    NavigationLink {
+                        FrameSourceSettingsView()
+                    } label: {
+                        HStack {
+                            Label("Источник кадра", systemImage: settingsManager.settings.frameSource.icon)
+                            Spacer()
+                            Text(settingsManager.settings.frameSource.displayName)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    NavigationLink {
+                        DiagnosticsView()
+                    } label: {
+                        Label("Диагностика", systemImage: "stethoscope")
+                    }
                 } header: {
                     Text("Hardware")
                 }

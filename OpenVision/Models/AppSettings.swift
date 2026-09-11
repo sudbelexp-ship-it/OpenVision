@@ -66,6 +66,31 @@ enum SpeechProviderType: String, Codable, CaseIterable {
     }
 }
 
+/// Источник кадра для голосовых команд с фото ("что это", "что я вижу", "прочитай") — см.
+/// PLAN.md, Фаза 5. Позволяет протестировать весь конвейер (голос → фото → бэкенд → озвучка)
+/// до прихода очков.
+enum FrameSourceType: String, Codable, CaseIterable {
+    case glasses = "glasses"
+    case iPhoneCamera = "iphone_camera"
+    case pickedPhoto = "picked_photo"
+
+    var displayName: String {
+        switch self {
+        case .glasses: return "Очки"
+        case .iPhoneCamera: return "Камера iPhone"
+        case .pickedPhoto: return "Выбрать фото"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .glasses: return "eyeglasses"
+        case .iPhoneCamera: return "camera"
+        case .pickedPhoto: return "photo.on.rectangle"
+        }
+    }
+}
+
 /// Which text-to-speech engine to use.
 enum TTSEngineType: String, Codable, CaseIterable, Identifiable {
     case appleSystem = "apple"
@@ -151,6 +176,11 @@ struct AppSettings: Codable, Equatable {
     /// Whether the selected Gemma model has finished downloading and is ready to load.
     /// Set by the model-manager / GemmaLocalService once the snapshot is on disk.
     var localGemmaModelReady: Bool = false
+
+    // MARK: - Frame Source (Фаза 5 — тест без очков)
+
+    /// Источник кадра для фото-команд. По умолчанию — очки (основной сценарий).
+    var frameSource: FrameSourceType = .glasses
 
     // MARK: - Voice Settings
 

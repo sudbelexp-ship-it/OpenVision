@@ -38,6 +38,20 @@ actor SberAuth {
         try await refresh(authKey: authKey)
     }
 
+    /// Статус кэшированного токена для экрана «Диагностика» — без самого токена.
+    struct DiagnosticsStatus {
+        let isAlive: Bool
+        let secondsRemaining: Int?
+    }
+
+    func diagnosticsStatus() -> DiagnosticsStatus {
+        guard let current else { return DiagnosticsStatus(isAlive: false, secondsRemaining: nil) }
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let remainingMs = current.expiresAtMs - nowMs
+        guard remainingMs > 0 else { return DiagnosticsStatus(isAlive: false, secondsRemaining: nil) }
+        return DiagnosticsStatus(isAlive: true, secondsRemaining: Int(remainingMs / 1000))
+    }
+
     private func isExpiringSoon(_ token: Token) -> Bool {
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
         return token.expiresAtMs - nowMs < Constants.Sber.tokenRefreshMarginMs

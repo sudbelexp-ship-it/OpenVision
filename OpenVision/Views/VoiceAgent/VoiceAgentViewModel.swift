@@ -883,7 +883,11 @@ final class VoiceAgentViewModel: ObservableObject {
         // Photo-capture phrasings ("take a photo and...") are handled elsewhere and unaffected;
         // this catches the bare "what do you see" style, which has no image source outside live
         // mode, and answers with guidance instead of poisoning the session.
-        if !isLiveVideoMode, settingsManager.settings.aiBackend == .localGemma {
+        // Только для источника «Очки»: вне live-режима у очков нет кадра для голой фразы без
+        // явного "photo"-триггера. У «Камера iPhone» / «Выбрать фото» кадр всегда доступен по
+        // запросу (см. PLAN.md, Фаза 5), так что этим guard их не касается.
+        if !isLiveVideoMode, settingsManager.settings.aiBackend == .localGemma,
+           settingsManager.settings.frameSource == .glasses {
             let visionPhrases = ["what do you see", "what am i looking at", "what are you looking at",
                                  "what's in front of me", "what is in front of me",
                                  "describe what you see", "describe the view", "describe the scene",
@@ -1878,6 +1882,22 @@ final class VoiceAgentViewModel: ObservableObject {
     }
 
     private func captureAndSendPhoto(withPrompt prompt: String) async {
+        // Источник кадра переключается в Settings → Источник кадра (Фаза 5 — тест без очков).
+        // «Очки» — существующий путь ниже, без изменений; остальные два — отдельные, более
+        // простые пути (нет стрима/LED, которыми нужно управлять).
+        switch settingsManager.settings.frameSource {
+        case .iPhoneCamera:
+            let phoneImage = await PhoneCameraService.shared.capturePhoto()
+            await sendCapturedImage(phoneImage, prompt: prompt, sourceDescription: "камера iPhone")
+            return
+        case .pickedPhoto:
+            let pickedImage = PickedPhotoStore.load()
+            await sendCapturedImage(pickedImage, prompt: prompt, sourceDescription: "выбранное фото")
+            return
+        case .glasses:
+            break
+        }
+
         // Try to get an image from various sources
         var imageData: Data?
         var startedStreamingForPhoto = false
@@ -1936,6 +1956,28 @@ final class VoiceAgentViewModel: ObservableObject {
             if startedStreamingForPhoto && glassesManager.isStreaming {
                 await glassesManager.stopStreaming()
             }
+        }
+    }
+
+    /// Общий "отправить фото или пожаловаться, что его нет" — используется источниками кадра
+    /// без стрима/LED (камера iPhone, выбранное фото). Путь очков обрабатывает это сам выше —
+    /// там нужна ещё и остановка стрима при ошибке, которой нет у остальных источников.
+    private func sendCapturedImage(_ imageData: Data?, prompt: String, sourceDescription: String) async {
+        do {
+            if let imageData {
+                let visionPrompt = visionPromptFromCommand(prompt)
+                NSLog("[OV] Sending message with photo (%d bytes) from %@, prompt: \"%@\"",
+                      imageData.count, sourceDescription, visionPrompt)
+                try await sendPromptToActiveBackend(visionPrompt, imageData: imageData)
+            } else {
+                NSLog("[OV] No image available from %@ — NOT sending to model", sourceDescription)
+                errorMessage = "Не удалось получить фото (\(sourceDescription))."
+                speakResponse("Не получилось получить фото. Попробуйте ещё раз.")
+            }
+        } catch {
+            print("[VoiceAgent] Failed to send: \(error)")
+            errorMessage = "Failed to send: \(error.localizedDescription)"
+            agentState = isSessionActive ? .listening : .idle
         }
     }
 

@@ -3,6 +3,9 @@
 
 import SwiftUI
 import MWDATCore
+#if DEBUG
+import MWDATMockDevice
+#endif
 
 @main
 struct OpenVisionApp: App {
@@ -36,6 +39,17 @@ struct OpenVisionApp: App {
         } catch {
             print("[OpenVisionApp] Failed to configure Wearables SDK: \(error)")
         }
+
+        // Mock Device Kit — тест регистрации/стрима без реальных очков в Debug-сборках (см.
+        // PLAN.md, Фаза 5). Включает debug-оверлей SDK (иконка "ladybug"), которым пользователь
+        // сам управляет: создаёт mock-устройство, включает питание/don, выбирает источник видео.
+        // Product MWDATMockDevice подтверждён в Package.swift пакета meta-wearables-dat-ios
+        // именно на закреплённой версии 0.9.0 — не гадание по документации.
+        #if DEBUG
+        MockDeviceKit.shared.enable()
+        print("[OpenVisionApp] MockDeviceKit enabled (Debug)")
+        #endif
+
         print("[OpenVisionApp] Initialized")
     }
 
