@@ -69,3 +69,7 @@ fabric.properties
 
 # Claude Code
 .claude/
+
+# Python (tools/)
+__pycache__/
+*.pyc
