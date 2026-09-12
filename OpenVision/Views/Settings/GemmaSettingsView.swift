@@ -47,10 +47,19 @@ struct GemmaSettingsView: View {
             Section {
                 if isDownloading {
                     VStack(alignment: .leading, spacing: 8) {
-                        ProgressView(value: gemma.downloadProgress)
-                        Text("Downloading… \(Int(gemma.downloadProgress * 100))%")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if gemma.isFinalizing {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Обрабатываю модель… (загрузка в память, может занять пару минут)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else {
+                            ProgressView(value: gemma.downloadProgress)
+                            Text("Downloading… \(Int(gemma.downloadProgress * 100))%")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 } else {
                     Button {

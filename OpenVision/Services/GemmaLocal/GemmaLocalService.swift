@@ -164,6 +164,11 @@ final class GemmaLocalService: ObservableObject {
     @Published var isProcessing: Bool = false
     @Published var isModelLoaded: Bool = false
     @Published var downloadProgress: Double = 0
+    /// True once байты на диске достигли ожидаемого размера, но `loadModelContainer` ещё не
+    /// вернулся — идёт разбор весов и (при первом запуске) компиляция Metal-шейдеров, а не
+    /// сеть. Без этого флага UI показывал "Downloading… 99%" неограниченно долго и выглядело
+    /// как зависание, хотя процесс просто ещё не сетевой.
+    @Published var isFinalizing: Bool = false
     @Published var lastError: String?
 
     // MARK: - Callbacks (mirror OpenClawService)
@@ -360,6 +365,7 @@ final class GemmaLocalService: ObservableObject {
     /// Download a model snapshot to disk (idempotent — skipped if already cached).
     func download(_ model: GemmaLocalModel, onProgress: @escaping (Double) -> Void) async throws {
         downloadProgress = 0
+        isFinalizing = false
         // The hub's progress callback counts FILES, and a model is mostly one giant safetensors —
         // so it sits at 0% for the whole download, then jumps to done. Poll the bytes actually on
         // disk (partial snapshot + CFNetwork in-flight temp files) against the model's expected
@@ -371,11 +377,20 @@ final class GemmaLocalService: ObservableObject {
             while !Task.isCancelled {
                 let bytes = Self.inFlightDownloadBytes(for: modelId, since: started)
                 let est = min(0.99, Double(bytes) / Double(expected))
-                await MainActor.run { self?.bumpDownloadProgress(est) }
+                await MainActor.run {
+                    self?.bumpDownloadProgress(est)
+                    // Байты на диске уже "все" — дальше не сеть, а разбор весов/компиляция
+                    // Metal-шейдеров внутри loadModelContainer. UI должен это показать честно,
+                    // а не держать текст "Downloading… 99%" неограниченно.
+                    if est >= 0.99 { self?.isFinalizing = true }
+                }
                 try? await Task.sleep(nanoseconds: 700_000_000)
             }
         }
-        defer { poller.cancel() }
+        defer {
+            poller.cancel()
+            isFinalizing = false
+        }
 
         // loadContainer fetches the snapshot if missing; reuse it as the download path.
         // Patch first in case a snapshot already exists — the config is read during load.
