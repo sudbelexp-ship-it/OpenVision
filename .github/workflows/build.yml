@@ -172,9 +172,17 @@ jobs:
 
       - name: Run unit tests (OpenVisionTests)
         run: |
+          # ENABLE_DEBUG_DYLIB=NO: Xcode 16+ по умолчанию запускает Debug-сборку через тонкий
+          # "blank executor" + инжект реального кода отдельным .debug.dylib (ради быстрых
+          # инкрементальных пересборок). В этом режиме Meta Wearables SDK падает с "Call
+          # configure() before attempting to access Wearables!" даже после успешного вызова
+          # configure() — похоже, сам механизм несовместим с тем, как SDK проверяет своё
+          # состояние. Отключаем именно для тестового запуска, чтобы host-приложение
+          # запускалось как обычный исполняемый файл.
           xcodebuild test \
             -scheme OpenVision \
             -project OpenVision.xcodeproj \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
             -skipMacroValidation -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            ENABLE_DEBUG_DYLIB=NO
