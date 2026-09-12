@@ -61,7 +61,7 @@ final class GlassesManager: ObservableObject {
         }
     }()
 
-    private let wearables: Wearables = {
+    private let wearables = {
         _ = GlassesManager.sdkConfigured
         return Wearables.shared
     }()
