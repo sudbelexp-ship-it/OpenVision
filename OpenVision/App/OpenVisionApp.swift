@@ -41,15 +41,16 @@ struct OpenVisionApp: App {
             print("[OpenVisionApp] Wearables.configure() (likely already configured): \(error)")
         }
 
-        // Mock Device Kit — тест регистрации/стрима без реальных очков в Debug-сборках (см.
-        // PLAN.md, Фаза 5). Включает debug-оверлей SDK (иконка "ladybug"), которым пользователь
-        // сам управляет: создаёт mock-устройство, включает питание/don, выбирает источник видео.
-        // Product MWDATMockDevice подтверждён в Package.swift пакета meta-wearables-dat-ios
-        // именно на закреплённой версии 0.9.0 — не гадание по документации.
-        #if DEBUG
-        MockDeviceKit.shared.enable()
-        print("[OpenVisionApp] MockDeviceKit enabled (Debug)")
-        #endif
+        // Mock Device Kit (PLAN.md, Фаза 5) НЕ включаю автоматически: три попытки в CI показали,
+        // что MockDeviceKit.shared.enable(), вызванный после обычного Wearables.configure()
+        // (который уже успевает отработать через GlassesManager.sdkConfigured до этой строки —
+        // см. GlassesManager.swift), падает с той же ошибкой "Call configure() before attempting
+        // to access Wearables!". Похоже, MockDeviceKit ожидает быть первым, кто трогает Wearables,
+        // а порядок инициализации @StateObject в этом файле такого не гарантирует. Product
+        // MWDATMockDevice остаётся подключённым в project.yml и импортированным здесь — включить
+        // можно точечно (например, кнопкой в Диагностике) после того, как кто-то с Xcode на Mac
+        // разберётся в реальном контракте активации через интерактивную отладку. Подробности и
+        // логи падений — см. историю коммитов Фазы 5.
 
         print("[OpenVisionApp] Initialized")
     }
