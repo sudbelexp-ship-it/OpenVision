@@ -49,7 +49,7 @@
 ## Features
 
 ### Five AI Backends — Cloud or Fully On-Device
-- **Local (MLX)**: A **choice of on-device models** via Apple MLX — Qwen 2.5 (0.5B/3B), Gemma 2 2B, Gemma 4 E2B, SmolVLM2 2.2B — so you can trade capability for memory/speed. Private, offline, **zero API cost**. Pick **SmolVLM2** to unlock **on-device vision** — photo Q&A *and* a fully-offline live video mode (see below).
+- **Local (MLX)**: A **choice of on-device models** via Apple MLX — Qwen3 (0.6B/4B), Gemma 3 1B, Bonsai 8B (1-bit), FastVLM 0.5B — so you can trade capability for memory/speed. Private, offline, **zero API cost**. Pick **FastVLM** to unlock **on-device vision** — photo Q&A *and* a fully-offline live video mode (see below).
 - **Apple Intelligence**: Apple's on-device Foundation Model (iOS 26+). **No download, no memory pressure** (OS-managed), private and offline. Uses guided generation + Apple's native tool-calling.
 - **OpenClaw**: Wake word activation, 56+ tools, task execution via WebSocket
 - **Gemini Live**: Real-time voice + vision with native audio streaming
@@ -59,10 +59,10 @@
 Say **"Ok Vision, start video stream"** to enter a live mode where the glasses camera stays on and the AI answers questions about what you're seeing. Ask freely — no wake word between questions — until you say **"stop video"**. Live video routes to whichever backend you've selected:
 - **Gemini Live** — native continuous audio + 1fps video (cloud).
 - **OpenAI** — the **Realtime API** (`gpt-realtime`): streaming voice + camera frames over WebSocket. Uses the same OpenAI key/base URL you already set (so OpenAI-compatible gateways work too).
-- **Local (SmolVLM2)** — **fully on-device** live video: Apple speech-to-text in, on-device SmolVLM2 answers on the latest frame, spoken back with your chosen voice. **No cloud, no cost, works with no signal.**
+- **Local (FastVLM)** — **fully on-device** live video: Apple speech-to-text in, on-device FastVLM answers on the latest frame, spoken back with your chosen voice. **No cloud, no cost, works with no signal.**
 
-### On-Device Photos (SmolVLM2)
-With **SmolVLM2** selected as your local model, **"Ok Vision, take a photo and tell me what this is"** captures a frame from the glasses and answers **entirely on-device** — nothing leaves the phone. Other local models stay text-only and hand camera questions to a cloud backend. (Images are resized on-device to keep the vision encoder within iOS memory limits.)
+### On-Device Photos (FastVLM)
+With **FastVLM** selected as your local model, **"Ok Vision, take a photo and tell me what this is"** captures a frame from the glasses and answers **entirely on-device** — nothing leaves the phone. Other local models stay text-only and hand camera questions to a cloud backend.
 
 ### On-Device Neural Voice (Kokoro)
 - A **natural, offline, private voice** (Kokoro-82M) running on-device via MLX — selectable from a Speech Engine dropdown with a voice picker.
@@ -129,7 +129,7 @@ With **SmolVLM2** selected as your local model, **"Ok Vision, take a photo and t
 | **Voice Assistant** | Tap the orb or say "Ok Vision" — live transcripts, distinct listening/thinking/speaking states |
 | **Settings** | Configure AI backend, web search, glasses, voice control, and advanced options |
 | **AI Backends** | Choose Local (MLX), Apple Intelligence (on-device), OpenClaw (tools), Gemini Live (low latency), or OpenAI |
-| **Local Models** | Download and manage on-device models (Qwen, Gemma, SmolVLM2, FastVLM) with real sizes and one-tap switching |
+| **Local Models** | Download and manage on-device models (Qwen, Gemma, Bonsai, FastVLM) with real sizes and one-tap switching |
 
 ---
 
@@ -142,7 +142,7 @@ With **SmolVLM2** selected as your local model, **"Ok Vision, take a photo and t
 - Meta Ray-Ban smart glasses
 - Meta Developer account for glasses registration
 - An AI backend — one of:
-  - **Local (MLX)** — no account/key needed; a choice of on-device models (Bonsai 8B, Qwen 2.5, Gemma, SmolVLM). Runs on a recent iPhone (e.g. 15 Pro/16/17)
+  - **Local (MLX)** — no account/key needed; a choice of on-device models (Bonsai 8B, Qwen3, Gemma 3, FastVLM). Runs on a recent iPhone (e.g. 15 Pro/16/17)
   - **Apple Intelligence** — no key or download; needs iOS 26+ on an Apple-Intelligence device (iPhone 15 Pro and newer)
   - [OpenClaw](https://github.com/openclaw/openclaw) instance
   - [Gemini API key](https://aistudio.google.com/app/apikey)
@@ -221,9 +221,9 @@ Full instructions, CLI build commands, and troubleshooting: **[SETUP.md](SETUP.m
 2. Settings → AI Backend → **OpenAI**, paste the key (and optionally a base URL / models)
 3. Say **"Ok Vision, start video stream"** to use live video over the Realtime API
 
-**For on-device vision (SmolVLM2):**
+**For on-device vision (FastVLM):**
 1. Settings → AI Backend → **Local (MLX)**
-2. Pick **SmolVLM2 2.2B** and tap download (~2.6 GB, one time)
+2. Pick **FastVLM 0.5B** and tap download (~1 GB, one time)
 3. Say **"take a photo and tell me what this is"**, or **"start video stream"** — all on-device
 
 ---
@@ -242,7 +242,7 @@ You: "Ok Vision stop"               → Interrupts AI mid-speech
 
 ### Live Video Mode (Gemini · OpenAI · Local)
 
-Works with whichever backend is selected — Gemini Live, OpenAI Realtime, or fully on-device SmolVLM2.
+Works with whichever backend is selected — Gemini Live, OpenAI Realtime, or fully on-device FastVLM.
 
 ```
 You: "Ok Vision, start video stream"     → Enters live video mode (uses your selected backend)
@@ -252,14 +252,14 @@ You: "And is this a good deal?"          → Keep asking — no wake word needed
 You: "Stop video"                        → Exits live video mode
 ```
 
-> On the **Local (SmolVLM2)** backend this runs **entirely on-device** (speak toward the phone; audio and vision never leave it). On **Gemini/OpenAI** the camera frames stream to the cloud provider.
+> On the **Local (FastVLM)** backend this runs **entirely on-device** (speak toward the phone; audio and vision never leave it). On **Gemini/OpenAI** the camera frames stream to the cloud provider.
 
-### On-Device Photo (SmolVLM2)
+### On-Device Photo (FastVLM)
 
 ```
-[Select Local → SmolVLM2 in Settings]
+[Select Local → FastVLM in Settings]
 You: "Ok Vision, take a photo and tell me what this is"
-[Glasses capture a frame → SmolVLM2 answers on-device → spoken reply]
+[Glasses capture a frame → FastVLM answers on-device → spoken reply]
 ```
 
 ### Voice Commands
@@ -268,7 +268,7 @@ You: "Ok Vision, take a photo and tell me what this is"
 |---------|--------|
 | "Ok Vision" | Activate listening (wake word) |
 | "Ok Vision stop" | Stop AI while speaking |
-| "Take a photo" | Capture and analyze view (on-device with SmolVLM2, else cloud) |
+| "Take a photo" | Capture and analyze view (on-device with FastVLM, else cloud) |
 | "What do you see?" | Describe current view |
 | "Remember this person as Sara" | Enroll a face (on-device) |
 | "Who is this?" | Identify the person in view (on-device) |
@@ -279,7 +279,7 @@ You: "Ok Vision, take a photo and tell me what this is"
 | "Remind me to call mom at 6 PM" | Reminder in Apple Reminders (exact time) |
 | "Add a meeting tomorrow at 9:30am" / "What's on my calendar today?" | Calendar add / read |
 | "Note that I parked in lot B" / "Search my notes for parking" | Notes, auto-tagged with place + time |
-| "Start video stream" | Enter live video mode (Gemini / OpenAI Realtime / on-device SmolVLM2) |
+| "Start video stream" | Enter live video mode (Gemini / OpenAI Realtime / on-device FastVLM) |
 | "Stop video" | Exit live video mode |
 
 > Commands are routed by the on-device model, so you don't need exact wording — natural phrasing works, and it searches the web on its own when it doesn't know.
@@ -290,13 +290,13 @@ You: "Ok Vision, take a photo and tell me what this is"
 
 | Backend | Voice | Vision | Cost / Privacy | Best For |
 |---------|-------|--------|----------------|----------|
-| **Local (MLX)** | Wake word + Apple STT | **On-device** photo + live video (SmolVLM2); else via a cloud backend | Free · **fully on-device** | Private chat, face commands, **offline vision** — pick Qwen/Gemma/SmolVLM |
+| **Local (MLX)** | Wake word + Apple STT | **On-device** photo + live video (FastVLM); else via a cloud backend | Free · **fully on-device** | Private chat, face commands, **offline vision** — pick Qwen/Gemma/FastVLM |
 | **Apple Intelligence** | Wake word + Apple STT | via a cloud backend | Free · **on-device, no download** | Private chat on iOS 26+ devices, lowest setup |
 | **OpenClaw** | Wake word + Apple STT | Photo on request | Self-hosted | Tasks, 56+ tools, control |
 | **Gemini Live** | Native VAD (always on) | Continuous 1fps video | Cloud API | Natural, low-latency conversation |
 | **OpenAI** | Wake word + Apple STT · Realtime VAD in live mode | Photo on request (GPT-4o) · **live video (Realtime `gpt-realtime`)** | Cloud API · OpenAI-compatible | Cloud text + vision, live video, cross-checking |
 
-Face recognition, web search, and conversation memory all run on the **on-device** backends (Gemma, Apple) — private, no photos or queries leave your phone unless you pick a cloud backend. With **SmolVLM2**, photo Q&A and live video are on-device too.
+Face recognition, web search, and conversation memory all run on the **on-device** backends (Gemma, Apple) — private, no photos or queries leave your phone unless you pick a cloud backend. With **FastVLM**, photo Q&A and live video are on-device too.
 
 ---
 
@@ -306,7 +306,7 @@ Face recognition, web search, and conversation memory all run on the **on-device
 | Setting | Description |
 |---------|-------------|
 | **AI Backend** | Choose Local (MLX), Apple Intelligence, OpenClaw, Gemini Live, or OpenAI |
-| **Local (MLX)** | Pick a model (Bonsai 8B, Qwen 2.5, Gemma, SmolVLM), download it, or **delete to reclaim storage**. **Bonsai 8B** is an 8B model in 1.28 GB; **SmolVLM2** adds on-device photo + live video |
+| **Local (MLX)** | Pick a model (Bonsai 8B, Qwen3, Gemma 3, FastVLM), download it, or **delete to reclaim storage**. **Bonsai 8B** is an 8B model in 1.28 GB; **FastVLM** adds on-device photo + live video |
 | **Apple Intelligence** | On-device model status (no key or download needed; iOS 26+) |
 | **Web Search** | **Tavily** key for real live results (news/prices/scores); DuckDuckGo fallback |
 | **OpenClaw Gateway** | WebSocket URL (e.g., `wss://localhost:18789`) |
@@ -480,7 +480,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 - [Meta Wearables DAT SDK](https://github.com/facebook/meta-wearables-dat-ios) - Glasses integration
-- [Apple MLX](https://github.com/ml-explore/mlx-swift-lm) - On-device model inference (Qwen, Gemma, SmolVLM)
+- [Apple MLX](https://github.com/ml-explore/mlx-swift-lm) - On-device model inference (Qwen, Gemma, FastVLM)
 - [Kokoro TTS](https://github.com/mlalma/kokoro-ios) - On-device neural voice (Kokoro-82M via MLX)
 - [Apple Foundation Models](https://developer.apple.com/documentation/foundationmodels) - On-device Apple Intelligence
 - [Google Gemini](https://ai.google.dev) - Live audio/video AI

@@ -9,7 +9,7 @@
 >
 > 1. **No loader changes.** Its `config.json` declares `model_type: "qwen3"`, which
 >    `LLMModelFactory` already registers, and it is text-only (`isVLM == false`) — so it needs
->    none of the E2B VLM-factory machinery below. Vision stays on SmolVLM2 / FastVLM.
+>    none of the E2B VLM-factory machinery below. Vision stays on FastVLM.
 > 2. **It needs forked Metal kernels.** 1-bit quantization is not in upstream mlx-swift
 >    (PR pending), so `project.yml` points `mlx-swift` at **`PrismML-Eng/mlx-swift`**. The fork
 >    dispatches 1-bit automatically through `QuantizedLinear` when `config.json` says

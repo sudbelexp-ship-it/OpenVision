@@ -6,9 +6,9 @@
 // connect()/disconnect()/sendMessage(). "Connect" loads the model into memory; "disconnect"
 // unloads it. Selection is a manual knob (Settings → AI Backend → Local (MLX)).
 //
-// Vision: SmolVLM2 and FastVLM handle photos fully on-device ("what's this?" with a glasses
-// frame) — images go in via UserInput / Chat.Message, resized to bound encoder memory. See
-// GemmaLocalModel.supportsOnDeviceVision for which models this actually applies to.
+// Vision: FastVLM handles photos fully on-device ("what's this?" with a glasses frame) — images
+// go in via UserInput / Chat.Message. See GemmaLocalModel.supportsOnDeviceVision for which
+// models this actually applies to.
 //
 // NOTE: Requires iOS 18+ and a physical device (MLX is unavailable on the Simulator).
 
@@ -16,7 +16,7 @@ import Foundation
 import UIKit            // UIApplication.applicationState — GPU inference is forbidden in background
 import MLX
 import MLXLLM            // text LLMs (Qwen3, Gemma 3, Bonsai) via LLMModelFactory
-import MLXVLM            // vision models (SmolVLM2, FastVLM) via VLMModelFactory
+import MLXVLM            // vision models (FastVLM) via VLMModelFactory
 import MLXLMCommon
 import MLXHuggingFace   // #hubDownloader() / #huggingFaceTokenizerLoader() macros
 import HuggingFace      // the macros expand to HuggingFace.HubClient …
@@ -32,13 +32,18 @@ import Tokenizers       // … and Tokenizers.AutoTokenizer
 /// `supportsOnDeviceVision` never actually enabled it (image encoding hit the ~6GB jetsam limit
 /// and crashed) — a heavy (~3.6GB) text-only model masquerading as a vision option. Gemma 3 4B
 /// vision was considered and rejected: its snapshot is ~8.6GB, i.e. worse than the model it would
-/// have replaced.
+/// have replaced. SmolVLM2 2.2B was removed after a confirmed on-device crash (iOS "excessive disk
+/// writes" watchdog — ~4.3 GB of file-backed memory dirtied in ~500s, the classic symptom of the OS
+/// thrashing under memory pressure): its `mlx-community` snapshot turned out to ship UNQUANTIZED
+/// weights at 4.49 GB on disk, not the ~2.6 GB this list originally assumed — verified via the
+/// HuggingFace API (`model.safetensors`, no `quantization_config` in `config.json`), nearly double
+/// FastVLM's proven-safe 1.25 GB. Every model kept below was re-verified the same way (real
+/// `model.safetensors` byte size + quantization config) and matches its advertised size.
 enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
     case qwen05B         // Qwen3 0.6B — tiny/fastest text
     case gemma2_2B       // Gemma 3 1B — balanced text
     case qwen3B          // Qwen3 4B — strongest text, still light
     case bonsai8B        // Bonsai 8B — Qwen3-8B at 1-bit, best text-per-byte
-    case smolVLM2_2B     // SmolVLM2 2.2B — heavier vision, better quality/memory
     case fastVLM05B      // Apple FastVLM 0.5B — fastest vision, real-time
     // NOTE: FastVLM 1.5B is intentionally absent — no public MLX checkpoint loads in mlx-swift-lm
     // (the community conversions ship non-reparameterized FastViTHD weights that fail key lookup).
@@ -52,7 +57,6 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
         case .gemma2_2B: return "Gemma 3 1B"
         case .qwen3B: return "Qwen3 4B"
         case .bonsai8B: return "Bonsai 8B (1-bit)"
-        case .smolVLM2_2B: return "SmolVLM2 2.2B"
         case .fastVLM05B: return "FastVLM 0.5B"
         }
     }
@@ -68,7 +72,6 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
         // changes — but the 1-bit Metal kernels only exist in the PrismML mlx-swift fork that
         // project.yml pins. On stock mlx-swift this model loads and then miscomputes/fails.
         case .bonsai8B: return "prism-ml/Bonsai-8B-mlx-1bit"
-        case .smolVLM2_2B: return "mlx-community/SmolVLM2-2.2B-Instruct-mlx"
         // FastVLM: Apple's real-time VLM (FastViTHD encoder). 0.5B is the factory's reference
         // build (config matches out of the box); the 1.5B community 8-bit needs its
         // preprocessor_config's processor_class patched to FastVLMProcessor (see patch on load).
@@ -82,7 +85,6 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
         case .gemma2_2B: return "1B • ~0.77 GB • balanced text, lighter than before, good memory"
         case .qwen3B: return "4B • ~2.3 GB • strongest text + best conversation memory"
         case .bonsai8B: return "8B • ~1.3 GB • 1-bit Qwen3-8B — strongest text, smallest footprint"
-        case .smolVLM2_2B: return "2.2B • ~2.6 GB • лучше качество фото, но медленнее FastVLM"
         case .fastVLM05B: return "0.5B • ~1.0 GB • самая быстрая vision — рекомендуется для очков"
         }
     }
@@ -97,7 +99,6 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
         case .qwen3B: return 2_280_000_000
         // 1,280,131,424 B of weights + ~16 MB tokenizer/vocab/merges.
         case .bonsai8B: return 1_300_000_000
-        case .smolVLM2_2B: return 2_600_000_000
         case .fastVLM05B: return 1_000_000_000
         }
     }
@@ -105,20 +106,14 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
     /// Vision models load via VLMModelFactory; text models via LLMModelFactory.
     var isVLM: Bool {
         switch self {
-        case .smolVLM2_2B, .fastVLM05B: return true
+        case .fastVLM05B: return true
         case .qwen05B, .gemma2_2B, .qwen3B, .bonsai8B: return false
         }
     }
 
-    /// Whether we let this model *use* its vision on-device. Both remaining VLMs are trusted for
-    /// on-device photos/live video (unlike the removed Gemma 4 E2B, which crashed on real images).
+    /// Whether we let this model *use* its vision on-device (unlike the removed Gemma 4 E2B, which
+    /// crashed on real images).
     var supportsOnDeviceVision: Bool { isVLM }
-
-    /// True for the FastVLM family (used to keep FastVLM at native resolution rather than the
-    /// SmolVLM downscale, and to trigger the 1.5B processor-config patch).
-    var isFastVLM: Bool {
-        self == .fastVLM05B
-    }
 
     /// Whether this model gets the short routing prompt.
     ///
@@ -181,7 +176,7 @@ final class GemmaLocalService: ObservableObject {
     /// model in settings — telemetry must report what actually served a turn, not what is picked.
     var activeModelId: String? { loadedModelId }
 
-    /// True when the loaded model can take photos on-device (SmolVLM2 or FastVLM).
+    /// True when the loaded model can take photos on-device (FastVLM).
     var visionReady: Bool {
         guard let id = loadedModelId, modelContainer != nil else { return false }
         return GemmaLocalModel.from(modelId: id).supportsOnDeviceVision
@@ -192,52 +187,6 @@ final class GemmaLocalService: ObservableObject {
 
     // mlx-swift-lm 3.31.4 registers Gemma 4 only in VLMModelFactory, whose text backbone mishandles
     // E-series shared-KV layers. We load Gemma 4 E2B as text instead — see registerGemma4TextType().
-
-    // MARK: - SmolVLM preprocessor patch (vision memory cap)
-
-    /// Cap for SmolVLM2's `size.longest_edge`. As shipped (2048), the processor UPSCALES every
-    /// input to 2048px — regardless of how small we hand it in — and tiles it into ~25 384px
-    /// crops, all encoded in one batched vision pass: an instant jetsam kill on iPhone
-    /// (observed: SIGKILL right at "starting generation"). 384 → 1 tile + the global image =
-    /// 2 encoder inputs. This is the documented SmolVLM memory knob (lower longest_edge to
-    /// trade detail for memory); raise to 768 (5 tiles) if quality needs it and memory allows.
-    private static let smolVLMMaxLongestEdge = 384
-
-    /// Rewrite `preprocessor_config.json` in the downloaded SmolVLM snapshot(s) to cap
-    /// `size.longest_edge`. Safe against re-downloads: the HuggingFace cache is existence-checked
-    /// (content-addressed blobs are not re-hashed), so a patched file is used as-is. Idempotent.
-    nonisolated private static func patchSmolVLMPreprocessorConfig() {
-        let fm = FileManager.default
-        for dir in [FileManager.SearchPathDirectory.cachesDirectory, .applicationSupportDirectory] {
-            guard let base = fm.urls(for: dir, in: .userDomainMask).first else { continue }
-            let hf = base.appendingPathComponent("huggingface", isDirectory: true)
-            guard let en = fm.enumerator(at: hf, includingPropertiesForKeys: nil) else { continue }
-            for case let url as URL in en
-            where url.lastPathComponent == "preprocessor_config.json"
-                && url.path.localizedCaseInsensitiveContains("smolvlm") {
-                patchLongestEdge(at: url)
-            }
-        }
-    }
-
-    nonisolated private static func patchLongestEdge(at url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              var size = json["size"] as? [String: Any] else { return }
-        let current = size["longest_edge"] as? Int
-        guard current != smolVLMMaxLongestEdge else { return }
-        size["longest_edge"] = smolVLMMaxLongestEdge
-        json["size"] = size
-        guard let out = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) else { return }
-        do {
-            // Plain (non-atomic) write follows the snapshot symlink and updates the blob in place.
-            try out.write(to: url)
-            NSLog("[OV] SmolVLM preprocessor patched at %@: longest_edge %d -> %d",
-                  url.lastPathComponent, current ?? -1, smolVLMMaxLongestEdge)
-        } catch {
-            NSLog("[OV] SmolVLM preprocessor patch FAILED: %@", "\(error)")
-        }
-    }
 
     // MARK: - FastVLM processor patch (community 1.5B config fix)
 
@@ -337,10 +286,8 @@ final class GemmaLocalService: ObservableObject {
         }
     }
 
-    /// Apply every downloaded-config fixup (SmolVLM memory cap + FastVLM processor class + FastVLM
-    /// empty vision_config).
+    /// Apply every downloaded-config fixup (FastVLM processor class + FastVLM empty vision_config).
     nonisolated private static func patchDownloadedVisionConfigs() {
-        patchSmolVLMPreprocessorConfig()
         patchFastVLMProcessorConfig()
         patchFastVLMConfigJSON()
     }
@@ -467,8 +414,7 @@ final class GemmaLocalService: ObservableObject {
 
         Memory.cacheLimit = 20 * 1024 * 1024
 
-        // Cap SmolVLM's image-splitting resolution BEFORE the load reads the processor config
-        // (as shipped it tiles every photo into ~25 vision-encoder inputs → jetsam).
+        // FastVLM config fixups must land BEFORE the load reads the processor config.
         Self.patchDownloadedVisionConfigs()
 
         do {
@@ -756,7 +702,7 @@ final class GemmaLocalService: ObservableObject {
         defer { setProcessing(false) }
 
         // Vision policy: images are used ONLY when the loaded model is trusted with on-device
-        // vision (SmolVLM2). Gemma 4 E2B's image encoding pushed memory to the ~6GB jetsam limit
+        // vision (FastVLM). Gemma 4 E2B's image encoding pushed memory to the ~6GB jetsam limit
         // and crashed, so for every other model `imageData` is ignored and photo commands route
         // to a cloud backend (VoiceAgentView gates that path on `visionReady`).
         var visionImage: CIImage?
@@ -770,10 +716,11 @@ final class GemmaLocalService: ObservableObject {
         // Keep replies short — this is spoken aloud on glasses, so long answers get tiresome
         // (and the TTS cuts off after ~a minute). Aim for a couple of natural sentences.
         var brevity = "You are a hands-free voice assistant for smart glasses. Reply in 2–4 natural sentences — enough detail to be genuinely useful and give a real sense of things, but brief enough to hear comfortably (around 20–30 seconds). Be specific and concrete, not vague. No lists, no markdown, no preamble; just answer."
-        // Hallucination defense: SmolVLM confidently invents details it can't see (research puts
-        // its "describe a thing that isn't there" rate near 94%, dropping to ~22% with a grounding
-        // prompt). Anchor it to THIS frame and let it admit uncertainty rather than guess — this is
-        // what stops the live feed from narrating stale/blurry glimpses when the head is moving.
+        // Hallucination defense: small on-device VLMs confidently invent details they can't see
+        // (research on this model class puts the "describe a thing that isn't there" rate near
+        // 94%, dropping to ~22% with a grounding prompt). Anchor it to THIS frame and let it admit
+        // uncertainty rather than guess — this is what stops the live feed from narrating
+        // stale/blurry glimpses when the head is moving.
         if visionImage != nil {
             brevity += " You are looking through the glasses camera right now. Describe ONLY what is clearly and currently visible in this exact image. If it's blurry, dark, partly out of frame, or you're not certain what something is, say so briefly instead of guessing — never mention objects you aren't confident are actually present."
         }
@@ -782,7 +729,7 @@ final class GemmaLocalService: ObservableObject {
 
         // Document-focus mode: while the user works with a document, its excerpts ride along —
         // including on VISION turns, so "does this match my letter?" can ground against the
-        // document while looking at the frame. (Quality caveat: SmolVLM2 is small; heavy text
+        // document while looking at the frame. (Quality caveat: FastVLM 0.5B is small; heavy text
         // context alongside an image is a known strain — kept because the grounded use case
         // outweighs it, and the excerpts are bounded.)
         if let docContext = await DocumentFocus.shared.contextForQuery(text) {
@@ -820,15 +767,10 @@ final class GemmaLocalService: ObservableObject {
         } else {
             chat.append(.init(role: .user, content: text))
         }
-        // Resize policy is model-specific:
-        //  • SmolVLM: pre-shrink to 512 so its (patched) tiler stays cheap — the jetsam killer was
-        //    full-resolution encoding.
-        //  • FastVLM: DON'T pre-shrink. Its FastViTHD encoder is built to ingest high-res frames
-        //    cheaply (few visual tokens), so downscaling would throw away its main advantage; let
-        //    its own processor handle sizing.
-        let loadedIsFastVLM = loadedModelId.map { GemmaLocalModel.from(modelId: $0).isFastVLM } ?? false
-        let resize: CGSize? = (visionImage != nil && !loadedIsFastVLM) ? CGSize(width: 512, height: 512) : nil
-        let userInput = UserInput(chat: chat, processing: .init(resize: resize))
+        // No pre-shrink: FastVLM's FastViTHD encoder is built to ingest high-res frames cheaply
+        // (few visual tokens), so downscaling would throw away its main advantage — let its own
+        // processor handle sizing. (A different vision model might need a resize policy here again.)
+        let userInput = UserInput(chat: chat)
 
         // Tag this generation. If a newer request starts, older ones stop and stay silent —
         // prevents a stale reply (e.g. a previous photo's description) bleeding into a new answer.

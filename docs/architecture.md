@@ -13,7 +13,7 @@ OpenVision/
 │   ├── AppleFoundation/ Apple Intelligence backend (+ its native Tool wrappers)
 │   ├── Audio/           Audio session, capture, playback, sounds
 │   ├── GeminiLive/      Gemini Live websocket backend + Gemini vision
-│   ├── GemmaLocal/      On-device MLX models (Gemma 4, SmolVLM2, FastVLM, Qwen)
+│   ├── GemmaLocal/      On-device MLX models (FastVLM, Qwen, Gemma, Bonsai)
 │   ├── LocalAgent/      Shared routing brain for on-device models (JSON-in-text)
 │   ├── NativeTools/     Productivity tools (timer, reminder, calendar, note, …)
 │   ├── OpenAIRealtime/  OpenAI Realtime (live audio/video)

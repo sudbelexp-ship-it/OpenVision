@@ -104,9 +104,10 @@ final class KokoroTTSService: ObservableObject {
     ///
     /// Synthesis is per-SENTENCE, not whole-reply: a single `generateAudio` pass allocates MLX
     /// memory proportional to text length, and a ~400-char reply spiked >1 GB — enough to jetsam
-    /// the app when SmolVLM2 is resident (~6 GB ceiling; confirmed twice from the device's memory
-    /// telemetry). Per-sentence generation bounds each spike, and the first sentence starts
-    /// playing while the rest still synthesize, so long replies also START sooner.
+    /// the app when a large local model is resident (~6 GB ceiling; confirmed twice from the
+    /// device's memory telemetry, back when SmolVLM2 was one of the local models — see git history
+    /// for why it was removed). Per-sentence generation bounds each spike, and the first sentence
+    /// starts playing while the rest still synthesize, so long replies also START sooner.
     func speak(_ text: String, voice: String) async {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, isModelReady else { return }

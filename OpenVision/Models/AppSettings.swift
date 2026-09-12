@@ -305,7 +305,7 @@ struct AppSettings: Codable, Equatable {
     }
 
     /// Backend label for the UI. For the local backend, reflects the *actually selected* MLX model
-    /// (Qwen / SmolVLM / FastVLM / …) instead of a fixed name, so the main-screen pill is accurate.
+    /// (Qwen / Gemma / FastVLM / …) instead of a fixed name, so the main-screen pill is accurate.
     var backendDisplayName: String {
         guard aiBackend == .localGemma else { return aiBackend.displayName }
         return "Local · \(GemmaLocalModel.from(modelId: localGemmaModelId).displayName)"

@@ -48,7 +48,7 @@ body:
     id: model
     attributes:
       label: Local model (if applicable)
-      placeholder: SmolVLM2 2.2B / FastVLM 0.5B / Qwen 2.5 3B …
+      placeholder: FastVLM 0.5B / Qwen3 4B / Bonsai 8B …
   - type: textarea
     id: logs
     attributes:

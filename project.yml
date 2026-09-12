@@ -97,7 +97,7 @@ targets:
       - package: mlx-swift-lm
         products:
           - MLXLLM           # text LLMs (Qwen 2.5, Gemma 2) via LLMModelFactory
-          - MLXVLM           # vision models (Gemma 4, SmolVLM2) via VLMModelFactory
+          - MLXVLM           # vision models (FastVLM) via VLMModelFactory
           - MLXLMCommon
           - MLXHuggingFace   # #hubDownloader() / #huggingFaceTokenizerLoader()
       # The macros above expand to HuggingFace.HubClient + Tokenizers.AutoTokenizer; mlx-swift-lm

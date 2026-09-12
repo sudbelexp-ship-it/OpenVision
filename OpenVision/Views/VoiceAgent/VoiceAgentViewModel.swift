@@ -884,8 +884,8 @@ final class VoiceAgentViewModel: ObservableObject {
         // are handled elsewhere and unaffected; this catches the bare "what do you see" style.
         //
         // Only for a TEXT-ONLY active local model: this guard used to fire for ANY local model
-        // regardless of vision support, which meant FastVLM/SmolVLM2 — models that DO handle a
-        // bare "что ты видишь" fine via the normal photoKeywords → captureAndSendPhoto path below
+        // regardless of vision support, which meant FastVLM — a model that DOES handle a bare
+        // "что ты видишь" fine via the normal photoKeywords → captureAndSendPhoto path below
         // — got needlessly redirected to this guidance message instead of just taking the photo.
         // Только для источника «Очки»: вне live-режима у очков нет кадра для голой фразы без
         // явного "photo"-триггера. У «Камера iPhone» / «Выбрать фото» кадр всегда доступен по
@@ -917,7 +917,7 @@ final class VoiceAgentViewModel: ObservableObject {
         // If in live video mode, route by which live backend is driving it.
         if isLiveVideoMode {
             if activeLiveService == nil {
-                // Local (SmolVLM2) live mode: STT is the input path, so every command lands here.
+                // Local (FastVLM) live mode: STT is the input path, so every command lands here.
                 // Answer it against the latest glasses frame.
                 await handleLocalLiveVideoCommand(command)
             } else if activeLiveService === geminiLive {
@@ -1011,9 +1011,9 @@ final class VoiceAgentViewModel: ObservableObject {
             return
         }
 
-        // Fully on-device live video: with SmolVLM2 loaded as the local backend, keep the glasses
-        // camera streaming and answer each spoken question against the latest frame. No cloud,
-        // no WebSocket — Apple STT keeps listening and the reply is spoken via the selected TTS.
+        // Fully on-device live video: with a vision-capable local model (FastVLM) loaded, keep the
+        // glasses camera streaming and answer each spoken question against the latest frame. No
+        // cloud, no WebSocket — Apple STT keeps listening and the reply is spoken via the selected TTS.
         if settingsManager.settings.aiBackend == .localGemma && GemmaLocalService.shared.visionReady {
             await startLocalLiveVideoMode()
             return
@@ -1124,12 +1124,12 @@ final class VoiceAgentViewModel: ObservableObject {
         return nil
     }
 
-    /// Fully on-device live video (SmolVLM2). Unlike the cloud modes, audio stays on the normal
+    /// Fully on-device live video (FastVLM). Unlike the cloud modes, audio stays on the normal
     /// Apple STT path — we just keep the glasses camera streaming and mark the mode active, so
     /// each spoken question is answered against the latest frame (see sendCommand). Replies
     /// speak through the selected TTS engine as usual.
     private func startLocalLiveVideoMode() async {
-        print("[VoiceAgent] Starting local live video mode (SmolVLM2)...")
+        print("[VoiceAgent] Starting local live video mode (FastVLM)...")
 
         if !glassesManager.isStreaming {
             await glassesManager.startStreaming()
@@ -1749,15 +1749,15 @@ final class VoiceAgentViewModel: ObservableObject {
     /// generation that routes a face action, a web search, or a direct spoken answer.
     private func handleLocalCommand(_ command: String, llm: LocalTextLLM, isPhotoCommand: Bool) async {
         if isPhotoCommand {
-            // SmolVLM2 handles photos fully on-device; other local models are text-only
+            // FastVLM handles photos fully on-device; other local models are text-only
             // (Gemma E2B's vision hit the jetsam limit — see GemmaLocalModel.supportsOnDeviceVision).
             if settingsManager.settings.aiBackend == .localGemma && GemmaLocalService.shared.visionReady {
-                print("[VoiceAgent] Photo command on local SmolVLM2 — capturing...")
+                print("[VoiceAgent] Photo command on local FastVLM — capturing...")
                 await captureAndSendPhoto(withPrompt: command)
                 return
             }
             agentState = isSessionActive ? .listening : .idle
-            speakResponse("This on-device model is text only. For camera questions, select FastVLM or SmolVLM2 as your local model, or switch to Sber or Gemini in Settings.")
+            speakResponse("This on-device model is text only. For camera questions, select FastVLM as your local model, or switch to Sber or Gemini in Settings.")
             return
         }
         // Route the command. With Apple TTS, stream the answer: speak sentences as they generate.
@@ -2318,7 +2318,7 @@ enum TextChunking {
     /// `lastSentenceBoundary` (terminator followed by a break, or newline). Chunks are trimmed;
     /// empties dropped; text after the last terminator is included as a final chunk.
     /// Used by Kokoro TTS to synthesize per-sentence — one long reply in a single MLX pass
-    /// spikes memory proportional to its length (jetsam risk next to SmolVLM2).
+    /// spikes memory proportional to its length (jetsam risk next to a large on-device model).
     static func sentences(_ s: String) -> [String] {
         let terminators: Set<Character> = [".", "!", "?"]
         var result: [String] = []

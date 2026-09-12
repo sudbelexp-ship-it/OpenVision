@@ -41,7 +41,7 @@ struct GemmaSettingsView: View {
             } header: {
                 Text("Model")
             } footer: {
-                Text("Runs entirely on-device via Apple MLX. Requires iOS 18+ and a physical device — no API key, no cloud, works offline. Tap a downloaded model to make it active.\n\nRule of thumb: smaller = faster but forgetful; bigger = better follow-ups and memory. FastVLM is the fastest for glasses photo commands; SmolVLM2 trades speed for quality.")
+                Text("Runs entirely on-device via Apple MLX. Requires iOS 18+ and a physical device — no API key, no cloud, works offline. Tap a downloaded model to make it active.\n\nRule of thumb: smaller = faster but forgetful; bigger = better follow-ups and memory. FastVLM is the only on-device vision model — needed for glasses photo commands.")
             }
 
             Section {
