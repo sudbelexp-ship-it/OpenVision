@@ -715,14 +715,20 @@ final class GemmaLocalService: ObservableObject {
 
         // Keep replies short — this is spoken aloud on glasses, so long answers get tiresome
         // (and the TTS cuts off after ~a minute). Aim for a couple of natural sentences.
-        var brevity = "You are a hands-free voice assistant for smart glasses. Reply in 2–4 natural sentences — enough detail to be genuinely useful and give a real sense of things, but brief enough to hear comfortably (around 20–30 seconds). Be specific and concrete, not vague. No lists, no markdown, no preamble; just answer."
+        // Explicit language instruction: the app's STT/TTS are Russian-only (see Constants.Voice),
+        // but nothing previously told the LOCAL model what language to reply in — a small model
+        // just mirrors the dominant language of its (English) prompt regardless of the user's
+        // spoken language, so it understood Russian input but always answered in English.
+        var brevity = "Respond in Russian (по-русски), regardless of the language of these instructions. You are a hands-free voice assistant for smart glasses. Reply in 2–4 natural sentences — enough detail to be genuinely useful and give a real sense of things, but brief enough to hear comfortably (around 20–30 seconds). Be specific and concrete, not vague. No lists, no markdown, no preamble; just answer."
         // Hallucination defense: small on-device VLMs confidently invent details they can't see
         // (research on this model class puts the "describe a thing that isn't there" rate near
-        // 94%, dropping to ~22% with a grounding prompt). Anchor it to THIS frame and let it admit
-        // uncertainty rather than guess — this is what stops the live feed from narrating
-        // stale/blurry glimpses when the head is moving.
+        // 94%, dropping to ~22% with a grounding prompt). Anchor it to THIS frame — but for a model
+        // as small as FastVLM 0.5B, telling it to refuse on ANY uncertainty made it refuse almost
+        // every turn ("нет информации"): it's rarely fully certain about anything. Ask for its best
+        // honest read of the obvious/general scene instead, reserving "I can't tell" for when the
+        // frame is truly unusable (too dark/blurry to make out anything).
         if visionImage != nil {
-            brevity += " You are looking through the glasses camera right now. Describe ONLY what is clearly and currently visible in this exact image. If it's blurry, dark, partly out of frame, or you're not certain what something is, say so briefly instead of guessing — never mention objects you aren't confident are actually present."
+            brevity += " You are looking through the glasses camera right now. Describe the general scene and the most obvious objects as your best honest read of this exact image — it's fine if some small details are uncertain, just don't confidently invent specifics you can't actually make out. Only say you can't tell if the image is genuinely too dark or blurry to describe at all."
         }
         let userSys = SettingsManager.shared.settings.userPrompt
         var systemContent = userSys.isEmpty ? brevity : "\(userSys)\n\n\(brevity)"

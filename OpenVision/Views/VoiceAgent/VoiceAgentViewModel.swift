@@ -1007,7 +1007,7 @@ final class VoiceAgentViewModel: ObservableObject {
         }
 
         guard glassesManager.isRegistered else {
-            ttsService.speak("Please connect your glasses first")
+            ttsService.speak("Сначала подключите очки")
             return
         }
 
@@ -1022,7 +1022,7 @@ final class VoiceAgentViewModel: ObservableObject {
         // Pick the live backend: OpenAI Realtime when OpenAI is the selected + configured backend,
         // otherwise Gemini Live (the default video provider for every other backend).
         guard let (service, label) = resolveLiveService() else {
-            ttsService.speak("Please configure your Gemini or OpenAI API key in settings")
+            ttsService.speak("Настройте ключ Gemini или OpenAI в настройках")
             return
         }
         activeLiveService = service
@@ -1104,7 +1104,7 @@ final class VoiceAgentViewModel: ObservableObject {
         print("[VoiceAgent] ✓ Live video mode active - \(label) handling audio + video")
 
         // Announce to user
-        ttsService.speak("Live video mode active")
+        ttsService.speak("Режим видео активен")
     }
 
     /// Resolve which live-video backend to use, or nil if none is configured.
@@ -1135,7 +1135,7 @@ final class VoiceAgentViewModel: ObservableObject {
             await glassesManager.startStreaming()
         }
         guard glassesManager.isStreaming else {
-            ttsService.speak("I couldn't start the glasses camera")
+            ttsService.speak("Не получилось запустить камеру очков")
             return
         }
 
@@ -1163,7 +1163,7 @@ final class VoiceAgentViewModel: ObservableObject {
         startWatchLoop()
 
         print("[VoiceAgent] ✓ Local live video mode active - watch loop + questions on latest frame")
-        ttsService.speak("Live video mode active, on device")
+        ttsService.speak("Режим видео активен, полностью на устройстве")
     }
 
     /// Answer a spoken question in local live video mode using a fresh, settled glasses frame.
@@ -1180,7 +1180,8 @@ final class VoiceAgentViewModel: ObservableObject {
         // describing, it doesn't simply stop". Silence everything, stay in live mode ("stop
         // video" remains the phrase that exits).
         let stopWords: Set<String> = ["stop", "stop it", "stop talking", "be quiet", "quiet",
-                                      "shut up", "enough", "cancel", "silence"]
+                                      "shut up", "enough", "cancel", "silence",
+                                      "стоп", "тихо", "замолчи", "хватит", "отмена", "тишина"]
         if stopWords.contains(lower.trimmingCharacters(in: .whitespacesAndNewlines)) {
             NSLog("[OV] live: bare stop — silencing, staying in live mode")
             MetricsCollector.shared.markInterrupted()
@@ -1193,12 +1194,15 @@ final class VoiceAgentViewModel: ObservableObject {
             agentState = .liveVideo
             return
         }
-        if lower.contains("narrat") || lower.contains("describe as i") {
+        if lower.contains("narrat") || lower.contains("describe as i")
+            || lower.contains("рассказывай") || lower.contains("описывай") || lower.contains("комментируй") {
             let turningOff = lower.contains("stop") || lower.contains("off") || lower.contains("quiet")
+                || lower.contains("хватит") || lower.contains("прекрати") || lower.contains("выключи")
+                || lower.contains("тихо")
             watchNarrationEnabled = !turningOff
             watchLastSpoken = nil
             watchLastSpokenThumb = nil
-            speakResponse(turningOff ? "Okay, I'll watch quietly." : "Okay, I'll describe what I see as you go.")
+            speakResponse(turningOff ? "Хорошо, буду молча наблюдать." : "Хорошо, буду описывать, что вижу, по ходу дела.")
             return
         }
         // Generic "what do you see"-type questions get an INSTANT answer from the watch loop's
@@ -1241,7 +1245,7 @@ final class VoiceAgentViewModel: ObservableObject {
             // Counted so a flaky glasses stream is visible in the events panel; the spoken
             // apology still counts as a delivered reply (success = delivered, not correct).
             MetricsCollector.shared.count("live_frame_unavailable")
-            speakResponse("I couldn't get a clear view just now — hold still a second and ask again.")
+            speakResponse("Не получилось разглядеть — постойте спокойно секунду и спросите ещё раз.")
             agentState = .liveVideo
             return
         }
@@ -1284,7 +1288,7 @@ final class VoiceAgentViewModel: ObservableObject {
                                                            includeHistory: sameSceneAsLastExchange)
         } catch {
             print("[VoiceAgent] Local live video inference failed: \(error)")
-            speakResponse("Sorry, that didn't work. \(error.localizedDescription)")
+            speakResponse("Извините, не получилось. \(error.localizedDescription)")
         }
         if isLiveVideoMode { agentState = .liveVideo }
     }
@@ -1571,7 +1575,7 @@ final class VoiceAgentViewModel: ObservableObject {
         }
 
         print("[VoiceAgent] Live video mode stopped")
-        ttsService.speak("Live video mode ended")
+        ttsService.speak("Режим видео завершён")
     }
 
     /// Setup live backend callbacks for audio/transcription (Gemini Live or OpenAI Realtime)
@@ -1757,7 +1761,7 @@ final class VoiceAgentViewModel: ObservableObject {
                 return
             }
             agentState = isSessionActive ? .listening : .idle
-            speakResponse("This on-device model is text only. For camera questions, select FastVLM as your local model, or switch to Sber or Gemini in Settings.")
+            speakResponse("Эта локальная модель только текстовая. Для вопросов с камерой выберите FastVLM в качестве локальной модели, либо переключитесь на Сбер или Gemini в настройках.")
             return
         }
         // Route the command. With Apple TTS, stream the answer: speak sentences as they generate.
@@ -1829,18 +1833,18 @@ final class VoiceAgentViewModel: ObservableObject {
         case "identify":
             agentState = .thinking
             guard let image = await currentGlassesImage() else {
-                speakResponse("I couldn't get a picture from the glasses. Make sure they're connected.")
+                speakResponse("Не получилось получить снимок с очков. Проверьте, что они подключены.")
                 return
             }
             speakResponse(await face.identify(in: image))
         case "remember":
             agentState = .thinking
             guard !intent.name.isEmpty else {
-                speakResponse("Sure — what's their name?")
+                speakResponse("Хорошо — как их зовут?")
                 return
             }
             guard let image = await currentGlassesImage() else {
-                speakResponse("I couldn't get a picture from the glasses. Make sure they're connected.")
+                speakResponse("Не получилось получить снимок с очков. Проверьте, что они подключены.")
                 return
             }
             speakResponse(await face.rememberFace(name: intent.name, from: image))
@@ -1950,7 +1954,7 @@ final class VoiceAgentViewModel: ObservableObject {
                 // Don't send a degraded text-only prompt to the model — that's what makes it
                 // reply "please provide an image". Tell the user directly and stop.
                 errorMessage = "Couldn't capture a photo (streaming: \(glassesManager.isStreaming ? "on" : "off"), registered: \(glassesManager.isRegistered ? "yes" : "no")). Try again."
-                speakResponse("I couldn't get a photo from the glasses. Please try again.")
+                speakResponse("Не получилось сделать снимок с очков. Попробуйте ещё раз.")
             }
         } catch {
             print("[VoiceAgent] Failed to send: \(error)")

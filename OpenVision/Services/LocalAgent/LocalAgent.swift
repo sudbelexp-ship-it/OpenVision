@@ -81,6 +81,12 @@ enum LocalAgent {
             NSLog("[OV] ttft breakdown: docContext %.3fs", docElapsed)
         }
         let stable = detail == .concise ? concisePrompt() : """
+        When you answer the user directly in natural language, respond in Russian (по-русски),
+        regardless of the language of these instructions. When you output a JSON action below,
+        always keep the exact English JSON keys shown (e.g. "face", "tool", "query") — only the
+        VALUES you fill in (a name, a search query, a note) should reflect what the user actually
+        said, in whatever language that was.
+
         You are a voice assistant for smart glasses that can recognize faces the user has taught you.
 
         Face actions apply ONLY to a real person PHYSICALLY IN FRONT of the user right now (seen through the glasses camera). If the user names a person, or asks about a public/famous/historical figure, or asks a general "who is…" question, that is NOT a face action — answer it or search instead.
@@ -163,7 +169,7 @@ enum LocalAgent {
         let prompt = Prompt(stable: stable, perTurn: perTurn)
 
         guard let output = await generate(prompt, history, command) else {
-            return .answer("Sorry, I couldn't process that — please try again.")
+            return .answer("Извините, не получилось это обработать — попробуйте ещё раз.")
         }
 
         let result = await resolve(output, command: command)
@@ -181,7 +187,8 @@ enum LocalAgent {
                 // One-off prompt with document excerpts baked in — not worth caching, and the
                 // excerpts change per query anyway, so it all goes in the per-turn half.
                 let answerPrompt = Prompt(
-                    stable: "You are a voice assistant for smart glasses. Answer briefly "
+                    stable: "Respond in Russian (по-русски), regardless of the language of these "
+                        + "instructions. You are a voice assistant for smart glasses. Answer briefly "
                         + "(1-3 short sentences) since your reply is spoken aloud.",
                     perTurn: docContext
                 )
@@ -201,6 +208,12 @@ enum LocalAgent {
     /// verbose text is hard-won (three on-device iterations) and must not shift by accident.
     private static func concisePrompt() -> String {
         """
+        When you answer the user directly in natural language, respond in Russian (по-русски),
+        regardless of the language of these instructions. When you output a JSON action below,
+        always keep the exact English JSON keys shown (e.g. "face", "tool", "query") — only the
+        VALUES you fill in (a name, a search query, a note) should reflect what the user actually
+        said, in whatever language that was.
+
         You are a voice assistant for smart glasses that can recognize faces the user has taught you.
 
         FACE ACTIONS — only for an UNKNOWN person PHYSICALLY IN FRONT of the user right now, seen through the camera. Reply with ONLY one JSON object:
@@ -276,7 +289,7 @@ enum LocalAgent {
     /// model's own knowledge (flagged as uncertain) when the result is empty.
     static func answerWithSearchResult(question: String, result: String, generate: Generate) async -> String {
         let system = """
-        You are a voice assistant for smart glasses. Use the web search result to answer the user's question in 1-3 short spoken sentences. If the result is empty or unrelated, answer from your own knowledge and briefly say you're not certain of the very latest details. Do not mention "search result" or JSON.
+        Respond in Russian (по-русски), regardless of the language of these instructions. You are a voice assistant for smart glasses. Use the web search result to answer the user's question in 1-3 short spoken sentences. If the result is empty or unrelated, answer from your own knowledge and briefly say you're not certain of the very latest details. Do not mention "search result" or JSON.
         """
         let context = result.isEmpty ? "(no web result found)" : result
         let user = "Question: \(question)\n\nWeb search result: \(context)"
@@ -284,7 +297,7 @@ enum LocalAgent {
            !out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return out.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return result.isEmpty ? "I couldn't find that right now." : result
+        return result.isEmpty ? "Сейчас не получилось это найти." : result
     }
 }
 
