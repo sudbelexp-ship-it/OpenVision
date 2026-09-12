@@ -898,7 +898,7 @@ final class VoiceAgentViewModel: ObservableObject {
                !lowerCommand.contains("photo") && !lowerCommand.contains("picture")
                && !lowerCommand.contains("фото") && !lowerCommand.contains("снимок") {
                 NSLog("[OV] vision question outside live mode — guiding instead of imageless model call")
-                speakResponse("I can't see anything right now. Say 'take a photo' for a quick look, or 'start live video' and I'll watch continuously.")
+                speakResponse("Скажите «сфотографируй» или «что это», чтобы я сделал снимок, либо «начни видео» для непрерывного просмотра.")
                 return
             }
         }
