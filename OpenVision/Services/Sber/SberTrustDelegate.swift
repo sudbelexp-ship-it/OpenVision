@@ -14,6 +14,16 @@ final class SberTrustDelegate: NSObject, URLSessionDelegate {
 
     private let anchorCertificates: [SecCertificate]
 
+    /// Точная причина последнего провала проверки сертификата — единственный способ увидеть, ПОЧЕМУ
+    /// не прошла проверка, без Mac/Xcode: `error.localizedDescription` от URLSession здесь всегда
+    /// один и тот же generic текст ("A TLS error caused..."), а реальная причина (какой именно шаг
+    /// цепочки не сошёлся — просрочен, не хватает промежуточного, не совпадает хост и т.д.) видна
+    /// только внутри `SecTrustEvaluateWithError`. GigaChatSettingsView добавляет это к сообщению об
+    /// ошибке в UI. Статическое — делегат живёт всё время работы приложения (создаётся один раз
+    /// в init() у GigaChatClient/SberAuth, не на каждый запрос), так что это просто "последний раз,
+    /// когда наш delegate вообще увидел challenge проверки сертификата", а не состояние инстанса.
+    static private(set) var lastTrustEvaluationError: String?
+
     override init() {
         self.anchorCertificates = Self.loadAnchorCertificates()
         super.init()
@@ -52,10 +62,20 @@ final class SberTrustDelegate: NSObject, URLSessionDelegate {
 
         var evalError: CFError?
         if SecTrustEvaluateWithError(serverTrust, &evalError) {
+            Self.lastTrustEvaluationError = nil
             completionHandler(.useCredential, URLCredential(trust: serverTrust))
         } else {
-            NSLog("[Sber] проверка сертификата не прошла для %@: %@", host,
-                  evalError.map { String(describing: $0) } ?? "unknown")
+            // Что именно прислал сервер, помимо ПОЧЕМУ не сошлось — часто это и есть ответ:
+            // например, если сервер отдаёт leaf-сертификат от совсем другого промежуточного, чем
+            // наш "Russian Trusted Sub CA", то самой ошибки недостаточно, а список subject'ов
+            // presented-цепочки показывает это напрямую.
+            let presentedChain = (SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate]) ?? []
+            let subjects = presentedChain.map { cert -> String in
+                (SecCertificateCopySubjectSummary(cert) as String?) ?? "?"
+            }.joined(separator: " → ")
+            let detail = evalError.map { String(describing: $0) } ?? "unknown"
+            Self.lastTrustEvaluationError = "\(detail) | цепочка сервера: \(subjects.isEmpty ? "пусто" : subjects)"
+            NSLog("[Sber] проверка сертификата не прошла для %@: %@", host, Self.lastTrustEvaluationError ?? "")
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }

@@ -165,7 +165,13 @@ struct GigaChatSettingsView: View {
                     let certHint = SberTrustDelegate.bundledCertificateCount() < 2
                         ? " (в приложении не хватает сертификата НУЦ Минцифры — см. Настройки → Диагностика)"
                         : ""
-                    checkResult = .failure(error.localizedDescription + certHint)
+                    // Точная причина отказа SecTrust (какой сертификат прислал сервер, что именно
+                    // не сошлось) — единственный способ диагностировать TLS без Mac/Xcode. nil здесь
+                    // означает, что наш делегат вообще не увидел challenge проверки сертификата —
+                    // т.е. проблема на более раннем уровне TLS-рукопожатия, не в самой цепочке.
+                    let trustDetail = SberTrustDelegate.lastTrustEvaluationError
+                        .map { " [детали TLS: \($0)]" } ?? ""
+                    checkResult = .failure(error.localizedDescription + certHint + trustDetail)
                     isChecking = false
                 }
             }

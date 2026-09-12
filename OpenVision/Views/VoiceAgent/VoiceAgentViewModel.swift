@@ -859,15 +859,24 @@ final class VoiceAgentViewModel: ObservableObject {
         }
 
         // Check for live video mode commands
+        // Русские фразы обязательны: DiagnosticsView/GigaChatSettingsView и голосовая подсказка
+        // ниже ("начни видео") — единственный способ для русскоязычного пользователя войти в
+        // режим — раньше список был чисто английским, и подсказанная фраза на самом деле никогда
+        // не срабатывала.
         let startLiveKeywords = ["start video stream", "start live video", "start video", "start streaming",
-                                 "enable video", "live mode", "go live", "video mode"]
+                                 "enable video", "live mode", "go live", "video mode",
+                                 "начни видео", "начать видео", "включи видео", "запусти видео",
+                                 "начни трансляцию", "начать трансляцию", "запусти трансляцию",
+                                 "живое видео", "режим видео"]
 
         let isStartLiveCommand = startLiveKeywords.contains { lowerCommand.contains($0) }
         // Fuzzy stop match: any "video"/"stream" phrase with a stop-like word. Tolerates Apple STT
         // dropping the leading 's' ("stop video" → "top video"), which previously sailed past the
         // exact-keyword list and got sent to the model as a question instead of ending the mode.
         let mentionsVideo = lowerCommand.contains("video") || lowerCommand.contains("stream")
-        let stopWords = ["stop", "top ", "end ", "exit", "disable", "close", "quit", "turn off"]
+            || lowerCommand.contains("видео") || lowerCommand.contains("трансляц")
+        let stopWords = ["stop", "top ", "end ", "exit", "disable", "close", "quit", "turn off",
+                         "стоп", "останов", "выключи", "прекрати", "заверши", "закрой", "хватит"]
         let isStopLiveCommand = mentionsVideo && stopWords.contains { lowerCommand.contains($0) }
 
         // Handle live video mode commands
