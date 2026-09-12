@@ -1768,7 +1768,12 @@ final class VoiceAgentViewModel: ObservableObject {
         // Backends that can't stream (Apple FM) fall back to a plain route via the protocol's
         // default implementation — onPartial simply never fires. Face/tool routes emit JSON
         // starting with "{", so we only begin speaking once the streamed output's first non-space
-        // char proves it's a plain answer — never for a structured route.
+        // char proves it's a plain answer — never for a structured route. A small model (Gemma 3
+        // 1B confirmed) can also attempt the tool-call shape WITHOUT valid JSON — a bare "tool
+        // websearch мой запрос" with no braces at all — which this "{" check alone doesn't catch,
+        // so it would stream straight to TTS one word at a time; looksLikeBrokenToolAttempt catches
+        // that too. (resolve() applies the same check to the FINISHED output, so it never gets
+        // recorded into history either — that's what stops it looping on every later turn.)
         let result: LocalAgent.RouteResult
         if canStreamSpeech {
             ttsStreaming = false
@@ -1778,8 +1783,9 @@ final class VoiceAgentViewModel: ObservableObject {
                 // Telemetry: the model has started producing. Marked before the JSON-route guard
                 // below so a structured route still records its think time.
                 MetricsCollector.shared.markFirstToken()
-                let lead = cumulative.trimmingCharacters(in: .whitespacesAndNewlines).first
-                guard let lead, lead != "{" else { return }   // JSON route → don't speak
+                let trimmedCumulative = cumulative.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let lead = trimmedCumulative.first, lead != "{",
+                      !LocalAgent.looksLikeBrokenToolAttempt(trimmedCumulative) else { return }
                 self.feedStreamingSpeech(cumulative, isFinal: false)
             }
         } else {

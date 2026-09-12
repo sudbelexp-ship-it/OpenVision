@@ -282,7 +282,35 @@ enum LocalAgent {
                 return .answer(toolResult)
             }
         }
+        // A small model sometimes attempts the tool-call shape without valid JSON — a bare
+        // "tool websearch мой запрос" or a "{...}" that fails to parse (missing quotes, wrong key).
+        // Speaking that verbatim is bad on its own, but the REAL damage is what happens next: it
+        // gets recorded into conversation history as an "assistant" turn, and a sub-1B model then
+        // parrots that same broken fragment on every later turn (context-over-pixels, same law as
+        // the vision refusal-loop bug) — an unrecoverable loop the user can only escape by
+        // resetting the conversation. Recognizing the attempt and substituting a clean fallback
+        // keeps garbage out of history instead of just hiding it from this one turn.
+        if looksLikeBrokenToolAttempt(trimmed) {
+            NSLog("[OV] route: unparsable tool-call attempt, not speaking/recording it verbatim: %@", trimmed)
+            return .answer("Извините, не получилось это обработать — попробуйте ещё раз.")
+        }
         return .answer(trimmed)
+    }
+
+    /// Heuristic for a failed tool/face-call attempt that isn't valid JSON. The schema's English
+    /// keywords ("tool", "face", "web_search"/"websearch") never occur in a normal spoken Russian
+    /// answer, so seeing one bare (not inside a string the user asked about) is a reliable signal
+    /// the model was trying — and failing — to emit the JSON shape, not actually answering.
+    /// Internal (not private): also used by the caller's live-streaming guard, which must suppress
+    /// this BEFORE `resolve()` ever sees the finished output — mid-generation the leading text may
+    /// have no "{" at all (a braceless "tool websearch …" attempt), so it would otherwise stream
+    /// straight to TTS one word at a time before this function gets a chance to catch it.
+    static func looksLikeBrokenToolAttempt(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        if lower.hasPrefix("tool") || lower.hasPrefix("face") || lower.hasPrefix("{") {
+            return true
+        }
+        return lower.contains("web_search") || lower.contains("websearch")
     }
 
     /// Phrase a concise spoken answer to `question` using a web-search `result`. Falls back to the
