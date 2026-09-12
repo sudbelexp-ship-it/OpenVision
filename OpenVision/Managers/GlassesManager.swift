@@ -44,7 +44,27 @@ final class GlassesManager: ObservableObject {
 
     // MARK: - Private Properties
 
-    private let wearables = Wearables.shared
+    /// `Wearables.configure()` обязан отработать до первого обращения к `Wearables.shared`
+    /// (см. `wearables` ниже) — иначе SDK падает с `fatalError`. Раньше на это полагались
+    /// неявно: OpenVisionApp.init() вызывал `configure()` до создания `GlassesManager.shared`.
+    /// Но `GlassesManager.shared` может быть создан и другими путями (SwiftUI `#Preview`,
+    /// тестовый хост при `xcodebuild test` — там `@main` не гарантированно выполняется до этого
+    /// класса), так что гарантия должна жить здесь, а не полагаться на порядок снаружи.
+    /// `static let` — потокобезопасный, выполняется ровно один раз при первом обращении.
+    private static let sdkConfigured: Bool = {
+        do {
+            try Wearables.configure()
+            return true
+        } catch {
+            print("[GlassesManager] Wearables.configure() failed: \(error)")
+            return false
+        }
+    }()
+
+    private let wearables: Wearables = {
+        _ = GlassesManager.sdkConfigured
+        return Wearables.shared
+    }()
     // 0.9.0 camera lifecycle: DeviceSession owns the device link, Camera owns the camera
     // hardware, camera.stream carries frames. Stopping the camera cascades to the stream.
     private var deviceSession: DeviceSession?
