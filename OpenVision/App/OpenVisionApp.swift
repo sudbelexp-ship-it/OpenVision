@@ -9,10 +9,37 @@ import MWDATMockDevice
 
 @main
 struct OpenVisionApp: App {
+    // MARK: - SDK bootstrap (см. ниже, почему это отдельное свойство, а не строка в init())
+
+    /// `Wearables.configure()` должен отработать ДО первого обращения к `Wearables.shared` —
+    /// а `GlassesManager.init()` обращается к нему в инициализаторе своего хранимого свойства
+    /// (`private let wearables = Wearables.shared`). `@StateObject`-свойства этой структуры
+    /// инициализируются В ПОРЯДКЕ ОБЪЯВЛЕНИЯ ДО тела `init()` — так что вызов `configure()` из
+    /// init() опаздывает: `glassesManager` ниже уже успевает создать `GlassesManager.shared` и
+    /// упасть с "Call configure() before attempting to access Wearables!". Это баг, который был
+    /// в проекте изначально — просто до сих пор никто не запускал собранное приложение
+    /// (`xcodebuild build` его не запускает; обнаружено при первом реальном прогоне юнит-тестов
+    /// на симуляторе в Фазе 5, тесты хостятся внутри самого приложения). Побочный эффект
+    /// static-свойства, объявленного выше `glassesManager`, — единственный надёжный способ
+    /// гарантировать порядок без переписывания GlassesManager.
+    private static let wearablesConfigured: Bool = {
+        do {
+            try Wearables.configure()
+            print("[OpenVisionApp] Wearables SDK configured")
+            return true
+        } catch {
+            print("[OpenVisionApp] Failed to configure Wearables SDK: \(error)")
+            return false
+        }
+    }()
+
     // MARK: - State Objects
 
     @StateObject private var settingsManager = SettingsManager.shared
-    @StateObject private var glassesManager = GlassesManager.shared
+    @StateObject private var glassesManager: GlassesManager = {
+        _ = OpenVisionApp.wearablesConfigured   // форсируем конфигурацию SDK перед доступом к Wearables.shared
+        return GlassesManager.shared
+    }()
     @StateObject private var conversationManager = ConversationManager.shared
 
     // MARK: - App Storage
@@ -32,19 +59,12 @@ struct OpenVisionApp: App {
         // then re-downloaded ~GBs at "connecting…" time). Must run before any HubClient exists.
         GemmaLocalService.bootstrapModelStore()
 
-        // Initialize Meta Wearables SDK
-        do {
-            try Wearables.configure()
-            print("[OpenVisionApp] Wearables SDK configured")
-        } catch {
-            print("[OpenVisionApp] Failed to configure Wearables SDK: \(error)")
-        }
-
         // Mock Device Kit — тест регистрации/стрима без реальных очков в Debug-сборках (см.
         // PLAN.md, Фаза 5). Включает debug-оверлей SDK (иконка "ladybug"), которым пользователь
         // сам управляет: создаёт mock-устройство, включает питание/don, выбирает источник видео.
         // Product MWDATMockDevice подтверждён в Package.swift пакета meta-wearables-dat-ios
-        // именно на закреплённой версии 0.9.0 — не гадание по документации.
+        // именно на закреплённой версии 0.9.0 — не гадание по документации. Wearables SDK к этому
+        // моменту уже настроен (см. wearablesConfigured выше — гарантированно раньше этой строки).
         #if DEBUG
         MockDeviceKit.shared.enable()
         print("[OpenVisionApp] MockDeviceKit enabled (Debug)")
