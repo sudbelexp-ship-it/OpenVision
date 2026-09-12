@@ -59,8 +59,14 @@ targets:
           - "**/*.plist"
       # Сертификаты НУЦ Минцифры — нужны SberTrustDelegate для TLS к *.devices.sberbank.ru.
       # Оба (корневой + промежуточный) — сервер не всегда отдаёт промежуточный сам.
+      # buildPhase ОБЯЗАТЕЛЕН: XcodeGen выбирает build phase по расширению файла, а .pem не входит
+      # в его список распознаваемых типов ресурсов — без явного указания файл добавляется в проект
+      # (виден в Xcode), но НЕ копируется в бандл ни при каком запуске (это и было настоящей причиной
+      # "не хватает сертификата": в IPA не было самих .pem-файлов вообще, ни в корне, ни в подпапке).
       - path: certs/russian_trusted_root_ca.pem
+        buildPhase: resources
       - path: certs/russian_trusted_sub_ca.pem
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: OpenVision/Resources/Info.plist
