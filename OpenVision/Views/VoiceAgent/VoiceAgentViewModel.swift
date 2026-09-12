@@ -877,16 +877,21 @@ final class VoiceAgentViewModel: ObservableObject {
             return
         }
 
-        // Vision-phrased questions OUTSIDE live mode must never reach the local model text-only:
-        // FastVLM answered "please upload an image", that refusal entered conversation history,
-        // and the model then parroted it on every later vision turn — image attached or not.
-        // Photo-capture phrasings ("take a photo and...") are handled elsewhere and unaffected;
-        // this catches the bare "what do you see" style, which has no image source outside live
-        // mode, and answers with guidance instead of poisoning the session.
+        // Vision-phrased questions OUTSIDE live mode must never reach a TEXT-ONLY local model:
+        // FastVLM answered "please upload an image" when asked without an attached frame, that
+        // refusal entered conversation history, and the model then parroted it on every later
+        // vision turn — image attached or not. Photo-capture phrasings ("take a photo and...")
+        // are handled elsewhere and unaffected; this catches the bare "what do you see" style.
+        //
+        // Only for a TEXT-ONLY active local model: this guard used to fire for ANY local model
+        // regardless of vision support, which meant FastVLM/SmolVLM2 — models that DO handle a
+        // bare "что ты видишь" fine via the normal photoKeywords → captureAndSendPhoto path below
+        // — got needlessly redirected to this guidance message instead of just taking the photo.
         // Только для источника «Очки»: вне live-режима у очков нет кадра для голой фразы без
         // явного "photo"-триггера. У «Камера iPhone» / «Выбрать фото» кадр всегда доступен по
         // запросу (см. PLAN.md, Фаза 5), так что этим guard их не касается.
         if !isLiveVideoMode, settingsManager.settings.aiBackend == .localGemma,
+           !GemmaLocalService.shared.visionReady,
            settingsManager.settings.frameSource == .glasses {
             let visionPhrases = ["what do you see", "what am i looking at", "what are you looking at",
                                  "what's in front of me", "what is in front of me",

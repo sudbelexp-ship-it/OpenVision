@@ -124,13 +124,18 @@ final class AudioSessionManager {
     /// (this is what previously made the glasses mic undetectable: the phone route disallows HFP).
     @discardableResult
     func configureForGlasses() throws -> Bool {
-        // Match OpenGlasses: `.default` mode + `.mixWithOthers` so the recognizer's session COEXISTS
-        // with the glasses camera's Bluetooth stream instead of taking exclusive HFP control. With
-        // `.voiceChat` + `.duckOthers` the camera stream killed the HFP mic (and iOS wouldn't revive
-        // it); `.mixWithOthers` keeps the glasses mic alive through photo capture.
+        // ЭКСПЕРИМЕНТ (см. обсуждение с пользователем): mode сменён .default → .voiceChat в
+        // попытке получить wideband HFP (mSBC, ~16 кГц) вместо narrowband (CVSD, ~8 кГц) — звук
+        // через очки в нашем приложении звучал заметно хуже, чем в родном Meta AI. Не проверено
+        // на реальном железе. `.mixWithOthers` (а не `.duckOthers`) сохранён нарочно — именно эта
+        // опция, а не сам mode, была на самом деле у истока старого бага "камера убивала HFP-мик"
+        // (см. git history); плюс configureAudioForGlasses()/applyPreferredAudioRoute() и так уже
+        // не вызывают эту функцию, пока идёт стрим камеры (glassesManager.isStreaming), так что
+        // тот сценарий конфликта не должен повториться. Если звук станет хуже или мик отвалится
+        // при съёмке — откатить mode обратно на .default одним коммитом.
         try audioSession.setCategory(
             .playAndRecord,
-            mode: .default,
+            mode: .voiceChat,
             options: [.mixWithOthers, .allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
         )
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
