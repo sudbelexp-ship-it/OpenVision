@@ -66,7 +66,7 @@ final class SberTrustDelegate: NSObject, URLSessionDelegate {
     /// промежуточный сертификат в цепочке сам (частый случай для сайтов на НУЦ Минцифры).
     private static func loadAnchorCertificates() -> [SecCertificate] {
         ["russian_trusted_root_ca", "russian_trusted_sub_ca"].compactMap { name in
-            guard let url = Bundle.main.url(forResource: name, withExtension: "pem"),
+            guard let url = findResourceURL(named: name, extension: "pem"),
                   let pemData = try? Data(contentsOf: url),
                   let der = derData(fromPEM: pemData) else {
                 NSLog("[Sber] не найден в бандле: %@.pem", name)
@@ -74,6 +74,34 @@ final class SberTrustDelegate: NSObject, URLSessionDelegate {
             }
             return SecCertificateCreateWithData(nil, der as CFData)
         }
+    }
+
+    /// `Bundle.main.url(forResource:withExtension:)` без `subdirectory:` ищет только в корне
+    /// бандла — а XcodeGen для одиночного файла вне основной папки таргета (наш случай: сертификаты
+    /// лежат в `certs/` на корне репозитория, не в `OpenVision/Resources`) может сохранить
+    /// относительный путь и положить файл в подпапку `certs/` ВНУТРИ бандла, а не в корень.
+    /// Пробуем по очереди: корень бандла → подпапка "certs" → полный обход бандла по расширению
+    /// (страховка на случай, если реальное поведение XcodeGen окажется ещё каким-то третьим).
+    private static func findResourceURL(named name: String, extension ext: String) -> URL? {
+        if let url = Bundle.main.url(forResource: name, withExtension: ext) {
+            return url
+        }
+        if let url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "certs") {
+            return url
+        }
+        // Последняя страховка: обходим весь бандл файловой системой напрямую, а не через
+        // Bundle-API (чьи допущения о плоской/вложенной структуре мы, похоже, угадали неверно —
+        // см. комментарий выше). Бандл небольшой (одно приложение), полный обход недорог и
+        // выполняется один раз при создании делегата, не на каждый запрос.
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: Bundle.main.bundleURL, includingPropertiesForKeys: nil
+        ) else { return nil }
+        for case let url as URL in enumerator
+        where url.pathExtension == ext && url.deletingPathExtension().lastPathComponent == name {
+            return url
+        }
+        return nil
     }
 
     /// PEM = base64(DER) обёрнутый в строки `-----BEGIN/END CERTIFICATE-----`.

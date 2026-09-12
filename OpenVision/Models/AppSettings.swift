@@ -235,7 +235,16 @@ struct AppSettings: Codable, Equatable {
     /// Prefer the glasses' Bluetooth microphone for voice input when they're the connected audio
     /// device — true hands-free. Falls back to the phone mic automatically when the glasses aren't
     /// the audio route. Turn off to always use the phone. (Glasses mic uses more battery.)
-    var preferGlassesMic: Bool = true
+    ///
+    /// Defaults to `false`: while the glasses mic (Bluetooth HFP) is active, iOS forces ALL audio —
+    /// including our own TTS replies — down to telephone-quality HFP, for as long as the app is
+    /// listening for the wake word (proven not fixable via AVAudioSession mode: `.voiceChat` was
+    /// tried and made no difference). Meta's own app avoids this by detecting the wake word
+    /// on-glasses, in firmware, and only opening the phone audio channel for the command itself —
+    /// a capability the public Wearables DAT SDK does not expose. With this off, wake-word listening
+    /// uses the phone mic (glasses stay on high-quality A2DP-only audio); the trade-off is picking up
+    /// the wake word by phone proximity rather than the glasses' own mic.
+    var preferGlassesMic: Bool = false
 
     // MARK: - AI Customization
 

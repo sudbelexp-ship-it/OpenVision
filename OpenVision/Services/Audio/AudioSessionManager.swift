@@ -124,18 +124,21 @@ final class AudioSessionManager {
     /// (this is what previously made the glasses mic undetectable: the phone route disallows HFP).
     @discardableResult
     func configureForGlasses() throws -> Bool {
-        // ЭКСПЕРИМЕНТ (см. обсуждение с пользователем): mode сменён .default → .voiceChat в
-        // попытке получить wideband HFP (mSBC, ~16 кГц) вместо narrowband (CVSD, ~8 кГц) — звук
-        // через очки в нашем приложении звучал заметно хуже, чем в родном Meta AI. Не проверено
-        // на реальном железе. `.mixWithOthers` (а не `.duckOthers`) сохранён нарочно — именно эта
-        // опция, а не сам mode, была на самом деле у истока старого бага "камера убивала HFP-мик"
-        // (см. git history); плюс configureAudioForGlasses()/applyPreferredAudioRoute() и так уже
-        // не вызывают эту функцию, пока идёт стрим камеры (glassesManager.isStreaming), так что
-        // тот сценарий конфликта не должен повториться. Если звук станет хуже или мик отвалится
-        // при съёмке — откатить mode обратно на .default одним коммитом.
+        // Проверено на реальном устройстве: смена mode .default → .voiceChat (в расчёте на
+        // wideband HFP) звук не улучшила — откачено обратно. Причина плохого звука не в кодеке
+        // HFP, а в том, что HFP вообще активен непрерывно, пока приложение слушает фразу
+        // активации. Родное приложение Meta AI, судя по всему, делает распознавание фразы
+        // активации на самих очках (в прошивке) и включает полноценный аудиоканал к телефону
+        // только на момент самой команды — эта возможность не выставлена в публичном SDK
+        // (Wearables DAT SDK), которым пользуется это приложение, поэтому воспроизвести её
+        // нельзя. Единственный способ получить качество A2DP постоянно — не открывать HFP вообще,
+        // т.е. слушать через микрофон телефона (см. AppSettings.preferGlassesMic = false по
+        // умолчанию и footer в VoiceSettingsView).
+        // Match OpenGlasses: `.mixWithOthers` (не `.duckOthers`) — именно эта опция лечила старый
+        // баг "камера убивала HFP-мик", не сам mode.
         try audioSession.setCategory(
             .playAndRecord,
-            mode: .voiceChat,
+            mode: .default,
             options: [.mixWithOthers, .allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
         )
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)

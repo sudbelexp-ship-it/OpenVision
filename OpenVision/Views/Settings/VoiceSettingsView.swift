@@ -66,7 +66,7 @@ struct VoiceSettingsView: View {
             } header: {
                 Text("Microphone")
             } footer: {
-                Text("When on, voice input uses the glasses' Bluetooth microphone for true hands-free use, and falls back to the phone mic automatically when the glasses aren't the audio device. Uses more battery. Turn off to always use the phone mic.")
+                Text("Off (recommended): wake-word listening uses the iPhone mic, so the glasses stay on full-quality Bluetooth audio (A2DP) for spoken replies and media. On: uses the glasses' own mic for true hands-free listening, but while listening ALL audio — including replies — drops to phone-call quality. This is a Bluetooth limitation (HFP vs A2DP), not a bug: Meta's own app avoids it by detecting the wake word in the glasses' firmware, a capability not available to third-party apps.")
             }
 
             // Speech Recognition/Synthesis Engine (STT + TTS)
