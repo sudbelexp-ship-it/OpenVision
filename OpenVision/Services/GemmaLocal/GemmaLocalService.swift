@@ -1,23 +1,22 @@
 // OpenVision - GemmaLocalService.swift
-// On-device Gemma 4 backend (text tier) running via Apple MLX.
+// On-device backend (text + vision tiers) running via Apple MLX.
 //
 // Conforms to the same backend shape as OpenClawService / GeminiLiveService:
 // `.shared` singleton, @MainActor, AIConnectionState, callbacks (not Combine for events),
 // connect()/disconnect()/sendMessage(). "Connect" loads the model into memory; "disconnect"
-// unloads it. Selection is a manual knob (Settings → AI Backend → Local (Gemma 4)).
+// unloads it. Selection is a manual knob (Settings → AI Backend → Local (MLX)).
 //
-// Vision: SmolVLM2 handles photos fully on-device ("what's this?" with a glasses frame) —
-// images go in via UserInput / Chat.Message, resized to bound encoder memory. Gemma 4 E2B,
-// though a VLM, stays TEXT-ONLY: its full-res image encoding hit the ~6GB jetsam limit and
-// crashed. See GemmaLocalModel.supportsOnDeviceVision.
+// Vision: SmolVLM2 and FastVLM handle photos fully on-device ("what's this?" with a glasses
+// frame) — images go in via UserInput / Chat.Message, resized to bound encoder memory. See
+// GemmaLocalModel.supportsOnDeviceVision for which models this actually applies to.
 //
 // NOTE: Requires iOS 18+ and a physical device (MLX is unavailable on the Simulator).
 
 import Foundation
 import UIKit            // UIApplication.applicationState — GPU inference is forbidden in background
 import MLX
-import MLXLLM            // text LLMs (Qwen 2.5, Gemma 2) via LLMModelFactory
-import MLXVLM            // vision models (Gemma 4, SmolVLM2) via VLMModelFactory
+import MLXLLM            // text LLMs (Qwen3, Gemma 3, Bonsai) via LLMModelFactory
+import MLXVLM            // vision models (SmolVLM2, FastVLM) via VLMModelFactory
 import MLXLMCommon
 import MLXHuggingFace   // #hubDownloader() / #huggingFaceTokenizerLoader() macros
 import HuggingFace      // the macros expand to HuggingFace.HubClient …
@@ -25,16 +24,21 @@ import Tokenizers       // … and Tokenizers.AutoTokenizer
 
 // MARK: - Selectable on-device models
 
-/// The on-device MLX models we expose in the model manager. A mix of lighter text LLMs and the
-/// heavier vision-capable Gemma 4 — so you can trade memory/speed for capability.
+/// The on-device MLX models we expose in the model manager. A mix of text-only tiers (for plain
+/// conversation, no camera) and vision models (for glasses/camera photo commands).
 /// Repo ids match validated `mlx-community` snapshots, except `bonsai8B` (PrismML — see below).
+///
+/// Removed (see git history for the analysis): Gemma 4 E2B advertised vision but
+/// `supportsOnDeviceVision` never actually enabled it (image encoding hit the ~6GB jetsam limit
+/// and crashed) — a heavy (~3.6GB) text-only model masquerading as a vision option. Gemma 3 4B
+/// vision was considered and rejected: its snapshot is ~8.6GB, i.e. worse than the model it would
+/// have replaced.
 enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
-    case qwen05B         // Qwen 2.5 0.5B — tiny/fastest
-    case gemma2_2B       // Gemma 2 2B — balanced text
-    case qwen3B          // Qwen 2.5 3B — strong text, still light
+    case qwen05B         // Qwen3 0.6B — tiny/fastest text
+    case gemma2_2B       // Gemma 3 1B — balanced text
+    case qwen3B          // Qwen3 4B — strongest text, still light
     case bonsai8B        // Bonsai 8B — Qwen3-8B at 1-bit, best text-per-byte
-    case e2b             // Gemma 4 E2B — vision-capable, heaviest
-    case smolVLM2_2B     // SmolVLM2 2.2B — lighter vision model
+    case smolVLM2_2B     // SmolVLM2 2.2B — heavier vision, better quality/memory
     case fastVLM05B      // Apple FastVLM 0.5B — fastest vision, real-time
     // NOTE: FastVLM 1.5B is intentionally absent — no public MLX checkpoint loads in mlx-swift-lm
     // (the community conversions ship non-reparameterized FastViTHD weights that fail key lookup).
@@ -44,11 +48,10 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .qwen05B: return "Qwen 2.5 0.5B"
-        case .gemma2_2B: return "Gemma 2 2B"
-        case .qwen3B: return "Qwen 2.5 3B"
+        case .qwen05B: return "Qwen3 0.6B"
+        case .gemma2_2B: return "Gemma 3 1B"
+        case .qwen3B: return "Qwen3 4B"
         case .bonsai8B: return "Bonsai 8B (1-bit)"
-        case .e2b: return "Gemma 4 E2B"
         case .smolVLM2_2B: return "SmolVLM2 2.2B"
         case .fastVLM05B: return "FastVLM 0.5B"
         }
@@ -57,15 +60,14 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
     /// HuggingFace repo id of the MLX snapshot.
     var modelId: String {
         switch self {
-        case .qwen05B: return "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
-        case .gemma2_2B: return "mlx-community/gemma-2-2b-it-4bit"
-        case .qwen3B: return "mlx-community/Qwen2.5-3B-Instruct-4bit"
+        case .qwen05B: return "mlx-community/Qwen3-0.6B-4bit"
+        case .gemma2_2B: return "mlx-community/gemma-3-1b-it-4bit"
+        case .qwen3B: return "mlx-community/Qwen3-4B-4bit"
         // PrismML's 1-bit (g128, ~1.25 bpw) quantization of Qwen3-8B. config.json declares
         // model_type "qwen3", which LLMModelFactory already registers, so it needs no loader
         // changes — but the 1-bit Metal kernels only exist in the PrismML mlx-swift fork that
         // project.yml pins. On stock mlx-swift this model loads and then miscomputes/fails.
         case .bonsai8B: return "prism-ml/Bonsai-8B-mlx-1bit"
-        case .e2b: return "mlx-community/gemma-4-E2B-it-4bit"
         case .smolVLM2_2B: return "mlx-community/SmolVLM2-2.2B-Instruct-mlx"
         // FastVLM: Apple's real-time VLM (FastViTHD encoder). 0.5B is the factory's reference
         // build (config matches out of the box); the 1.5B community 8-bit needs its
@@ -76,13 +78,12 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
 
     var detail: String {
         switch self {
-        case .qwen05B: return "0.5B • ~0.4 GB • tiny + fastest — weak at conversation memory"
-        case .gemma2_2B: return "2B • ~1.5 GB • balanced text, good conversation memory"
-        case .qwen3B: return "3B • ~1.9 GB • strongest text + best conversation memory"
+        case .qwen05B: return "0.6B • ~0.35 GB • tiny + fastest — weak at conversation memory"
+        case .gemma2_2B: return "1B • ~0.77 GB • balanced text, lighter than before, good memory"
+        case .qwen3B: return "4B • ~2.3 GB • strongest text + best conversation memory"
         case .bonsai8B: return "8B • ~1.3 GB • 1-bit Qwen3-8B — strongest text, smallest footprint"
-        case .e2b: return "2B • ~3.6 GB • vision-capable, heaviest"
-        case .smolVLM2_2B: return "2.2B • ~2.6 GB • best all-round: vision + solid memory"
-        case .fastVLM05B: return "0.5B • ~1.0 GB • fastest live vision — weak at conversation memory"
+        case .smolVLM2_2B: return "2.2B • ~2.6 GB • лучше качество фото, но медленнее FastVLM"
+        case .fastVLM05B: return "0.5B • ~1.0 GB • самая быстрая vision — рекомендуется для очков"
         }
     }
 
@@ -90,38 +91,28 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
     /// (the hub only reports per-FILE progress, useless for a model that is one big safetensors).
     var expectedDownloadBytes: Int64 {
         switch self {
-        case .qwen05B: return 400_000_000
-        case .gemma2_2B: return 1_500_000_000
-        case .qwen3B: return 1_900_000_000
+        // Точные размеры репозиториев на HuggingFace (сумма всех файлов, сентябрь 2026).
+        case .qwen05B: return 351_000_000
+        case .gemma2_2B: return 771_000_000
+        case .qwen3B: return 2_280_000_000
         // 1,280,131,424 B of weights + ~16 MB tokenizer/vocab/merges.
         case .bonsai8B: return 1_300_000_000
-        case .e2b: return 3_600_000_000
         case .smolVLM2_2B: return 2_600_000_000
         case .fastVLM05B: return 1_000_000_000
         }
     }
 
-    /// Vision models load via VLMModelFactory; text models via LLMModelFactory. Gemma 4 E2B is a
-    /// multimodal checkpoint (weights prefixed `language_model.`, plus vision/audio towers), so it
-    /// loads via VLMModelFactory — but only after registerGemma4TextType() swaps a shared-KV-aware
-    /// text backbone into the type registry (see loadModelContainer). Same recipe as OpenGlasses.
+    /// Vision models load via VLMModelFactory; text models via LLMModelFactory.
     var isVLM: Bool {
         switch self {
-        case .e2b, .smolVLM2_2B, .fastVLM05B: return true
+        case .smolVLM2_2B, .fastVLM05B: return true
         case .qwen05B, .gemma2_2B, .qwen3B, .bonsai8B: return false
         }
     }
 
-    /// Whether we let this model *use* its vision on-device. Distinct from `isVLM`: Gemma 4 E2B
-    /// is a VLM but its image encoding pushed memory to the ~6GB jetsam limit and crashed, so it
-    /// stays text-only. SmolVLM2 and Apple's FastVLM are trusted for on-device photos/live video —
-    /// FastVLM's FastViTHD encoder is designed to be fast and memory-light at high resolution.
-    var supportsOnDeviceVision: Bool {
-        switch self {
-        case .smolVLM2_2B, .fastVLM05B: return true
-        default: return false
-        }
-    }
+    /// Whether we let this model *use* its vision on-device. Both remaining VLMs are trusted for
+    /// on-device photos/live video (unlike the removed Gemma 4 E2B, which crashed on real images).
+    var supportsOnDeviceVision: Bool { isVLM }
 
     /// True for the FastVLM family (used to keep FastVLM at native resolution rather than the
     /// SmolVLM downscale, and to trigger the 1.5B processor-config patch).
@@ -141,7 +132,7 @@ enum GemmaLocalModel: String, CaseIterable, Identifiable, Codable {
     }
 
     static func from(modelId: String) -> GemmaLocalModel {
-        allCases.first { $0.modelId == modelId } ?? .e2b
+        allCases.first { $0.modelId == modelId } ?? .fastVLM05B
     }
 
     /// True if the given model id (which may not be in our list) is a vision model.
@@ -190,8 +181,7 @@ final class GemmaLocalService: ObservableObject {
     /// model in settings — telemetry must report what actually served a turn, not what is picked.
     var activeModelId: String? { loadedModelId }
 
-    /// True when the loaded model can take photos on-device (currently SmolVLM2 only).
-    /// Unknown model ids resolve to .e2b in from(modelId:), which is vision-disabled — safe.
+    /// True when the loaded model can take photos on-device (SmolVLM2 or FastVLM).
     var visionReady: Bool {
         guard let id = loadedModelId, modelContainer != nil else { return false }
         return GemmaLocalModel.from(modelId: id).supportsOnDeviceVision
@@ -435,9 +425,6 @@ final class GemmaLocalService: ObservableObject {
     private func loadModelContainer(modelId: String, progress: @escaping (Double) -> Void) async throws -> ModelContainer {
         let configuration = ModelConfiguration(id: modelId)
         let handler: (Progress) -> Void = { p in Task { @MainActor in progress(p.fractionCompleted) } }
-        // Register the shared-KV-aware Gemma 4 text backbone before loading. The multimodal VLM
-        // Gemma 4 wrapper builds its text tower from this same type registry, so E2B needs it too.
-        await Self.registerGemma4TextType()
         if GemmaLocalModel.isVLM(modelId: modelId) {
             return try await VLMModelFactory.shared.loadContainer(
                 from: #hubDownloader(), using: #huggingFaceTokenizerLoader(),
@@ -446,23 +433,6 @@ final class GemmaLocalService: ObservableObject {
             return try await LLMModelFactory.shared.loadContainer(
                 from: #hubDownloader(), using: #huggingFaceTokenizerLoader(),
                 configuration: configuration, progressHandler: handler)
-        }
-    }
-
-    /// Teach the LLM factory to build Gemma 4 (incl. E2B) as a pure text model. mlx-swift-lm only
-    /// registers `gemma4` in the *VLM* factory, whose text backbone mishandles E-series shared-KV
-    /// layers; the standalone `Gemma4TextModel` handles them. `Gemma4TextConfiguration` decodes
-    /// top-level keys and its defaults already equal E2B's text_config (hidden 1536, 35 layers,
-    /// 20 kv-shared, 256 per-layer input), so an E2B checkpoint that nests those under `text_config`
-    /// still yields correct params. Same fix OpenGlasses applies. Idempotent (map insert).
-    private static func registerGemma4TextType() async {
-        // Fully qualified: MLXVLM also exports Gemma4TextConfiguration/Gemma4TextModel, so the bare
-        // names are ambiguous — the LLM (text) types are the ones that handle shared-KV layers.
-        for type in ["gemma4", "gemma4_text"] {
-            await LLMTypeRegistry.shared.registerModelType(type) { data in
-                let config = try JSONDecoder().decode(MLXLLM.Gemma4TextConfiguration.self, from: data)
-                return MLXLLM.Gemma4TextModel(config)
-            }
         }
     }
 
@@ -1273,7 +1243,7 @@ final class GemmaLocalService: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .modelNotLoaded:
-                return "The local Gemma model isn't loaded. Download it in Settings → AI Backend → Local (Gemma 4)."
+                return "The local model isn't loaded. Download it in Settings → AI Backend → Local (MLX)."
             case .backgrounded:
                 return "On-device AI can't run while the app is in the background. Bring OpenVision to the foreground."
             case .badFrame:

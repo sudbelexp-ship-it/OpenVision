@@ -34,7 +34,7 @@ enum AIBackendType: String, Codable, CaseIterable {
         case .appleFoundation:
             return "On-device Apple model — private, no download (iOS 26+)"
         case .localGemma:
-            return "On-device Gemma 4 — private, offline, no API cost"
+            return "On-device MLX models (Qwen3, FastVLM…) — private, offline, no API cost"
         case .sber:
             return "GigaChat — облачный текст и vision на русском"
         }
@@ -169,9 +169,10 @@ struct AppSettings: Codable, Equatable {
 
     // MARK: - Local Gemma Configuration
 
-    /// HuggingFace repo id of the on-device Gemma 4 model to load.
-    /// Matches `GemmaLocalModel.e2b.modelId` (note the validated capital-E2B casing).
-    var localGemmaModelId: String = "mlx-community/gemma-4-E2B-it-4bit"
+    /// HuggingFace repo id of the on-device MLX model to load.
+    /// Matches `GemmaLocalModel.fastVLM05B.modelId` — fastest vision model, the recommended
+    /// default now that Gemma 4 E2B (which never actually supported vision) was removed.
+    var localGemmaModelId: String = "mlx-community/FastVLM-0.5B-bf16"
 
     /// Whether the selected Gemma model has finished downloading and is ready to load.
     /// Set by the model-manager / GemmaLocalService once the snapshot is on disk.

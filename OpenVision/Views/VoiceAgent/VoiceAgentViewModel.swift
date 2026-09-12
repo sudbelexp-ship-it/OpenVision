@@ -1752,7 +1752,7 @@ final class VoiceAgentViewModel: ObservableObject {
                 return
             }
             agentState = isSessionActive ? .listening : .idle
-            speakResponse("This on-device model is text only. For camera questions, select SmolVLM2 as your local model, or switch to Gemini or OpenClaw in Settings.")
+            speakResponse("This on-device model is text only. For camera questions, select FastVLM or SmolVLM2 as your local model, or switch to Sber or Gemini in Settings.")
             return
         }
         // Route the command. With Apple TTS, stream the answer: speak sentences as they generate.
