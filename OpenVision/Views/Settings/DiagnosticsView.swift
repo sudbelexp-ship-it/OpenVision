@@ -10,6 +10,7 @@ struct DiagnosticsView: View {
     @ObservedObject private var metrics = MetricsCollector.shared
 
     @State private var sberStatus: SberAuth.DiagnosticsStatus?
+    private var certCount: Int { SberTrustDelegate.bundledCertificateCount() }
 
     var body: some View {
         Form {
@@ -32,6 +33,9 @@ struct DiagnosticsView: View {
             }
 
             Section {
+                statusRow("Сертификаты НУЦ Минцифры", ok: certCount == 2,
+                          value: "\(certCount) из 2")
+
                 if settingsManager.settings.isSberConfigured {
                     if let sberStatus {
                         statusRow("Токен GigaChat", ok: sberStatus.isAlive,
@@ -52,7 +56,7 @@ struct DiagnosticsView: View {
             } header: {
                 Text("GigaChat")
             } footer: {
-                Text("Обновляется при открытии этого экрана. Сам токен и ключ здесь никогда не показываются.")
+                Text("Обновляется при открытии этого экрана. Сам токен и ключ здесь никогда не показываются. Если сертификатов меньше 2 — TLS-соединение с GigaChat не заработает, это баг сборки, а не настроек.")
             }
 
             Section {

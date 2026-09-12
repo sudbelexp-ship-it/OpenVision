@@ -383,18 +383,36 @@ final class GemmaLocalService: ObservableObject {
         // a fresh 0→1 fraction per FILE, which made the bar thrash between 1% and 99%. The byte
         // poller above is the single writer until completion.
         Self.patchDownloadedVisionConfigs()
-        do {
-            _ = try await loadModelContainer(modelId: model.modelId) { p in onProgress(p) }
-        } catch {
-            // A fresh snapshot's RAW config may be rejected before we can touch it (FastVLM 1.5B
-            // ships an empty vision_config). The files are on disk now, so patch and retry once —
-            // the existence-checked cache reuses them, so this is a re-parse, not a re-download.
-            NSLog("[OV] load failed (%@) — patching downloaded configs and retrying", "\(error)")
-            Self.patchDownloadedVisionConfigs()
-            _ = try await loadModelContainer(modelId: model.modelId) { p in onProgress(p) }
+
+        // Мобильная сеть часто рвётся посреди многогигабайтной закачки. HubClient (swift-huggingface)
+        // умеет докачивать файл Range-запросом с места, где остановилась последняя УСПЕШНО
+        // завершённая попытка (см. incompleteBlobPath в его исходниках) — но только если
+        // приложение само повторяет попытку после обрыва; само по себе оно не переретраивает.
+        // Раньше здесь был ровно один повтор — и то только на случай "битого" конфига у свежего
+        // снапшота (FastVLM 1.5B), не на сетевые обрывы. Теперь повторяем до maxAttempts раз с
+        // растущей паузой, чтобы временный обрыв связи не требовал вручную нажимать "Скачать" —
+        // каждый повтор дозакачивает файл с последней сохранённой позиции, а не с нуля.
+        let maxAttempts = 5
+        var lastError: Error?
+        for attempt in 1...maxAttempts {
+            do {
+                _ = try await loadModelContainer(modelId: model.modelId) { p in onProgress(p) }
+                downloadProgress = 1
+                return
+            } catch is CancellationError {
+                throw CancellationError()   // отмена пользователем — не повторяем
+            } catch {
+                lastError = error
+                NSLog("[OV] download attempt %d/%d failed: %@", attempt, maxAttempts, "\(error)")
+                // Патчим на случай "битого" конфига свежего снапшота — дёшево, не мешает
+                // сетевым повторам (файлы уже на диске, это перечитывание, не перезакачка).
+                Self.patchDownloadedVisionConfigs()
+                guard attempt < maxAttempts else { break }
+                let delaySeconds = min(30.0, pow(2.0, Double(attempt)))
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            }
         }
-        Self.patchDownloadedVisionConfigs()
-        downloadProgress = 1
+        throw lastError ?? URLError(.unknown)
     }
 
     /// Load (downloading if needed) a model container, using the vision or text factory based on

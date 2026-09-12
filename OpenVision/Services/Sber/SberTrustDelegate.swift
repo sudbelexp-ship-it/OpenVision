@@ -12,14 +12,21 @@ import Security
 
 final class SberTrustDelegate: NSObject, URLSessionDelegate {
 
-    private let anchorCertificate: SecCertificate?
+    private let anchorCertificates: [SecCertificate]
 
     override init() {
-        self.anchorCertificate = Self.loadAnchorCertificate()
+        self.anchorCertificates = Self.loadAnchorCertificates()
         super.init()
-        if anchorCertificate == nil {
-            NSLog("[Sber] ВНИМАНИЕ: russian_trusted_root_ca.pem не загружен — запросы к GigaChat завершатся ошибкой TLS")
+        if anchorCertificates.isEmpty {
+            NSLog("[Sber] ВНИМАНИЕ: сертификаты НУЦ Минцифры не загружены из бандла — запросы к GigaChat завершатся ошибкой TLS")
         }
+    }
+
+    /// Сколько сертификатов НУЦ Минцифры реально нашлось в бандле (ожидается 2: корневой +
+    /// промежуточный) — для экрана «Диагностика», единственного способа проверить это без
+    /// Mac/Xcode. Не зависит от того, создавался ли уже реальный делегат.
+    static func bundledCertificateCount() -> Int {
+        loadAnchorCertificates().count
     }
 
     func urlSession(
@@ -34,13 +41,13 @@ final class SberTrustDelegate: NSObject, URLSessionDelegate {
         }
 
         let host = challenge.protectionSpace.host
-        guard host.hasSuffix(Constants.Sber.trustedHostSuffix), let anchor = anchorCertificate else {
-            // Не хост GigaChat (или сертификат не загрузился) — стандартная системная проверка.
+        guard host.hasSuffix(Constants.Sber.trustedHostSuffix), !anchorCertificates.isEmpty else {
+            // Не хост GigaChat (или сертификаты не загрузились) — стандартная системная проверка.
             completionHandler(.performDefaultHandling, nil)
             return
         }
 
-        SecTrustSetAnchorCertificates(serverTrust, [anchor] as CFArray)
+        SecTrustSetAnchorCertificates(serverTrust, anchorCertificates as CFArray)
         SecTrustSetAnchorCertificatesOnly(serverTrust, false)
 
         var evalError: CFError?
@@ -53,15 +60,20 @@ final class SberTrustDelegate: NSObject, URLSessionDelegate {
         }
     }
 
-    // MARK: - Загрузка сертификата из бандла
+    // MARK: - Загрузка сертификатов из бандла
 
-    private static func loadAnchorCertificate() -> SecCertificate? {
-        guard let url = Bundle.main.url(forResource: "russian_trusted_root_ca", withExtension: "pem"),
-              let pemData = try? Data(contentsOf: url),
-              let derData = derData(fromPEM: pemData) else {
-            return nil
+    /// Корневой + промежуточный (Sub CA) — на случай, если сервер GigaChat не отдаёт
+    /// промежуточный сертификат в цепочке сам (частый случай для сайтов на НУЦ Минцифры).
+    private static func loadAnchorCertificates() -> [SecCertificate] {
+        ["russian_trusted_root_ca", "russian_trusted_sub_ca"].compactMap { name in
+            guard let url = Bundle.main.url(forResource: name, withExtension: "pem"),
+                  let pemData = try? Data(contentsOf: url),
+                  let der = derData(fromPEM: pemData) else {
+                NSLog("[Sber] не найден в бандле: %@.pem", name)
+                return nil
+            }
+            return SecCertificateCreateWithData(nil, der as CFData)
         }
-        return SecCertificateCreateWithData(nil, derData as CFData)
     }
 
     /// PEM = base64(DER) обёрнутый в строки `-----BEGIN/END CERTIFICATE-----`.

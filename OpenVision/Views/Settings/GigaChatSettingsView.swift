@@ -160,7 +160,12 @@ struct GigaChatSettingsView: View {
                 }
             } catch {
                 await MainActor.run {
-                    checkResult = .failure(error.localizedDescription)
+                    // Явно подсказываем самую частую причину TLS-ошибки — сертификат НУЦ
+                    // Минцифры не попал в сборку (баг сборки/бандла, а не настроек пользователя).
+                    let certHint = SberTrustDelegate.bundledCertificateCount() < 2
+                        ? " (в приложении не хватает сертификата НУЦ Минцифры — см. Настройки → Диагностика)"
+                        : ""
+                    checkResult = .failure(error.localizedDescription + certHint)
                     isChecking = false
                 }
             }
